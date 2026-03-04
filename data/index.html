@@ -208,6 +208,33 @@
             animation: pulse 1s infinite;
         }
         
+        .settings-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .settings-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        .settings-btn:active {
+            transform: translateY(0px);
+        }
+        
         @media (max-width: 768px) {
             h1 {
                 font-size: 1.5em;
@@ -220,11 +247,19 @@
             .grid {
                 grid-template-columns: 1fr;
             }
+            
+            .settings-btn {
+                position: static;
+                margin: 10px auto;
+                display: block;
+                width: fit-content;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <a href="/settings" class="settings-btn">⚙️ Settings</a>
         <header>
             <h1>🌱 ESP32 Smart Farm Control</h1>
             <p><span id="statusBadge" class="status-badge status-offline">● CONNECTING...</span></p>

@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Farm - Settings</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        h1 {
+            color: #667eea;
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .nav-buttons {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .nav-btn {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            font-weight: bold;
+        }
+        
+        .nav-btn:hover {
+            background: #5568d3;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .card-title {
+            font-size: 1.3em;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .icon {
+            font-size: 1.5em;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            color: #666;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        input[type="number"], input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+        
+        input[type="number"]:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .switch-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: #4caf50;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        .save-btn {
+            width: 100%;
+            padding: 15px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .save-btn:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+        
+        .schedule-list {
+            display: grid;
+            gap: 10px;
+        }
+        
+        .schedule-item {
+            display: grid;
+            grid-template-columns: 60px 60px 100px 80px 60px auto;
+            gap: 10px;
+            align-items: center;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        
+        .schedule-item input, .schedule-item select {
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .delete-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .add-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        .status-message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        @media (max-width: 768px) {
+            .schedule-item {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚙️ Smart Farm Settings</h1>
+            <div class="nav-buttons">
+                <a href="/" class="nav-btn">🏠 Dashboard</a>
+                <button class="nav-btn" onclick="loadSettings()">🔄 Reload</button>
+            </div>
+        </header>
+        
+        <div id="statusMessage" class="status-message"></div>
+        
+        <!-- Automation Enable/Disable -->
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">🤖</span>
+                <span>Automation Control</span>
+            </div>
+            
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="autoTempEnabled">
+                    <span class="slider"></span>
+                </label>
+                <label for="autoTempEnabled" style="margin: 0; color: #333;">เปิดระบบควบคุมอุณหภูมิอัตโนมัติ</label>
+            </div>
+            
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="autoHumEnabled">
+                    <span class="slider"></span>
+                </label>
+                <label for="autoHumEnabled" style="margin: 0; color: #333;">เปิดระบบควบคุมความชื้นอัตโนมัติ</label>
+            </div>
+            
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="scheduleEnabled">
+                    <span class="slider"></span>
+                </label>
+                <label for="scheduleEnabled" style="margin: 0; color: #333;">เปิดระบบตั้งเวลาอัตโนมัติ</label>
+            </div>
+        </div>
+        
+        <!-- Temperature Settings -->
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">🌡️</span>
+                <span>Temperature Control Settings</span>
+            </div>
+            
+            <div class="form-group">
+                <label>🌀 Fan ON Temperature (°C)</label>
+                <input type="number" id="tempFanOn" step="0.1" placeholder="เปิดพัดลมเมื่ออุณหภูมิเกิน">
+                <small style="color: #666;">เปิดพัดลมเมื่ออุณหภูมิสูงกว่าค่านี้</small>
+            </div>
+            
+            <div class="form-group">
+                <label>🌀 Fan OFF Temperature (°C)</label>
+                <input type="number" id="tempFanOff" step="0.1" placeholder="ปิดพัดลมเมื่ออุณหภูมิต่ำกว่า">
+                <small style="color: #666;">ปิดพัดลมเมื่ออุณหภูมิต่ำกว่าค่านี้</small>
+            </div>
+            
+            <div class="form-group">
+                <label>🔥 Heater ON Temperature (°C)</label>
+                <input type="number" id="tempHeaterOn" step="0.1" placeholder="เปิดฮีตเตอร์เมื่ออุณหภูมิต่ำกว่า">
+                <small style="color: #666;">เปิดฮีตเตอร์เมื่ออุณหภูมิต่ำกว่าค่านี้</small>
+            </div>
+            
+            <div class="form-group">
+                <label>🔥 Heater OFF Temperature (°C)</label>
+                <input type="number" id="tempHeaterOff" step="0.1" placeholder="ปิดฮีตเตอร์เมื่ออุณหภูมิสูงกว่า">
+                <small style="color: #666;">ปิดฮีตเตอร์เมื่ออุณหภูมิสูงกว่าค่านี้</small>
+            </div>
+        </div>
+        
+        <!-- Humidity Settings -->
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">💧</span>
+                <span>Humidity Control Settings</span>
+            </div>
+            
+            <div class="form-group">
+                <label>💦 Minimum Humidity (%)</label>
+                <input type="number" id="humMin" step="1" min="0" max="100" placeholder="ความชื้นต่ำสุด">
+                <small style="color: #666;">เปิดปั๊มน้ำเมื่อความชื้นต่ำกว่าค่านี้</small>
+            </div>
+            
+            <div class="form-group">
+                <label>💦 Maximum Humidity (%)</label>
+                <input type="number" id="humMax" step="1" min="0" max="100" placeholder="ความชื้นสูงสุด">
+                <small style="color: #666;">เปิดพัดลมเมื่อความชื้นสูงกว่าค่านี้</small>
+            </div>
+        </div>
+        
+        <!-- Weather Location -->
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">🌍</span>
+                <span>Weather Location</span>
+            </div>
+            
+            <div class="form-group">
+                <label>🏙️ City Name</label>
+                <input type="text" id="cityName" placeholder="ชื่อเมือง (เช่น Bangkok, Chiang Mai)">
+                <small style="color: #666;">ชื่อเมืองสำหรับดึงข้อมูลสภาพอากาศ</small>
+            </div>
+        </div>
+        
+        <!-- Schedule System -->
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">⏰</span>
+                <span>Schedule System</span>
+            </div>
+            
+            <div id="scheduleList" class="schedule-list">
+                <!-- Schedules will be loaded here -->
+            </div>
+            
+            <button class="add-btn" onclick="addSchedule()">➕ เพิ่มตารางเวลา</button>
+        </div>
+        
+        <!-- Save Button -->
+        <button class="save-btn" onclick="saveSettings()">💾 บันทึกการตั้งค่า</button>
+    </div>
+    
+    <script>
+        let config = {};
+        
+        console.log('Smart Farm Settings - v1.0');
+        
+        // Load settings from API
+        function loadSettings() {
+            console.log('Loading settings...');
+            fetch('/api/config')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Settings loaded:', data);
+                    config = data;
+                    
+                    // Load values to form
+                    document.getElementById('tempFanOn').value = data.tempFanOn || 30;
+                    document.getElementById('tempFanOff').value = data.tempFanOff || 28;
+                    document.getElementById('tempHeaterOn').value = data.tempHeaterOn || 20;
+                    document.getElementById('tempHeaterOff').value = data.tempHeaterOff || 22;
+                    document.getElementById('humMin').value = data.humMin || 60;
+                    document.getElementById('humMax').value = data.humMax || 80;
+                    document.getElementById('autoTempEnabled').checked = data.autoTempEnabled || false;
+                    document.getElementById('autoHumEnabled').checked = data.autoHumEnabled || false;
+                    document.getElementById('scheduleEnabled').checked = data.scheduleEnabled || false;
+                    document.getElementById('cityName').value = data.cityName || 'Bangkok';
+                    
+                    // Load schedules
+                    renderSchedules(data.schedules || []);
+                    
+                    showStatus('✅ โหลดการตั้งค่าสำเร็จ', 'success');
+                })
+                .catch(error => {
+                    console.error('Error loading settings:', error);
+                    showStatus('❌ ไม่สามารถโหลดการตั้งค่าได้', 'error');
+                });
+        }
+        
+        // Render schedules
+        function renderSchedules(schedules) {
+            const container = document.getElementById('scheduleList');
+            container.innerHTML = '';
+            
+            schedules.forEach((sched, index) => {
+                const div = document.createElement('div');
+                div.className = 'schedule-item';
+                div.innerHTML = `
+                    <input type="number" value="${sched.hour}" min="0" max="23" 
+                           data-id="${index}" data-field="hour" placeholder="ชั่วโมง">
+                    <input type="number" value="${sched.minute}" min="0" max="59" 
+                           data-id="${index}" data-field="minute" placeholder="นาที">
+                    <select data-id="${index}" data-field="relayNum">
+                        <option value="1" ${sched.relayNum==1?'selected':''}>พัดลม (Fan)</option>
+                        <option value="2" ${sched.relayNum==2?'selected':''}>ปั๊มน้ำ (Pump)</option>
+                        <option value="3" ${sched.relayNum==3?'selected':''}>ฮีตเตอร์ (Heater)</option>
+                    </select>
+                    <select data-id="${index}" data-field="turnOn">
+                        <option value="true" ${sched.turnOn?'selected':''}>เปิด (ON)</option>
+                        <option value="false" ${!sched.turnOn?'selected':''}>ปิด (OFF)</option>
+                    </select>
+                    <label class="switch">
+                        <input type="checkbox" ${sched.enabled?'checked':''} 
+                               data-id="${index}" data-field="enabled">
+                        <span class="slider"></span>
+                    </label>
+                    <button class="delete-btn" onclick="deleteSchedule(${index})">🗑️</button>
+                `;
+                container.appendChild(div);
+            });
+            
+            if (schedules.length === 0) {
+                container.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">ยังไม่มีตารางเวลา กด "เพิ่มตารางเวลา" เพื่อสร้าง</p>';
+            }
+        }
+        
+        // Add new schedule
+        function addSchedule() {
+            if (!config.schedules) config.schedules = [];
+            if (config.schedules.length >= 10) {
+                showStatus('❌ สามารถเพิ่มตารางเวลาได้สูงสุด 10 รายการ', 'error');
+                return;
+            }
+            
+            config.schedules.push({
+                hour: 0,
+                minute: 0,
+                relayNum: 1,
+                turnOn: true,
+                enabled: false
+            });
+            
+            renderSchedules(config.schedules);
+        }
+        
+        // Delete schedule
+        function deleteSchedule(index) {
+            if (confirm('ต้องการลบตารางเวลานี้หรือไม่?')) {
+                config.schedules.splice(index, 1);
+                renderSchedules(config.schedules);
+            }
+        }
+        
+        // Get schedules from form
+        function getSchedulesFromForm() {
+            const schedules = [];
+            const items = document.querySelectorAll('.schedule-item');
+            
+            items.forEach(item => {
+                const hour = parseInt(item.querySelector('[data-field="hour"]').value) || 0;
+                const minute = parseInt(item.querySelector('[data-field="minute"]').value) || 0;
+                const relayNum = parseInt(item.querySelector('[data-field="relayNum"]').value) || 1;
+                const turnOn = item.querySelector('[data-field="turnOn"]').value === 'true';
+                const enabled = item.querySelector('[data-field="enabled"]').checked;
+                
+                schedules.push({ hour, minute, relayNum, turnOn, enabled });
+            });
+            
+            return schedules;
+        }
+        
+        // Save settings
+        function saveSettings() {
+            // Get form data
+            const formData = {
+                tempFanOn: parseFloat(document.getElementById('tempFanOn').value),
+                tempFanOff: parseFloat(document.getElementById('tempFanOff').value),
+                tempHeaterOn: parseFloat(document.getElementById('tempHeaterOn').value),
+                tempHeaterOff: parseFloat(document.getElementById('tempHeaterOff').value),
+                humMin: parseFloat(document.getElementById('humMin').value),
+                humMax: parseFloat(document.getElementById('humMax').value),
+                autoTempEnabled: document.getElementById('autoTempEnabled').checked,
+                autoHumEnabled: document.getElementById('autoHumEnabled').checked,
+                scheduleEnabled: document.getElementById('scheduleEnabled').checked,
+                cityName: document.getElementById('cityName').value.trim(),
+                schedules: getSchedulesFromForm()
+            };
+            
+            console.log('Saving settings:', formData);
+            
+            // Validate
+            if (formData.tempFanOn <= formData.tempFanOff) {
+                showStatus('❌ อุณหภูมิเปิดพัดลมต้องมากกว่าอุณหภูมิปิดพัดลม', 'error');
+                return;
+            }
+            
+            if (formData.tempHeaterOff <= formData.tempHeaterOn) {
+                showStatus('❌ อุณหภูมิปิดฮีตเตอร์ต้องมากกว่าอุณหภูมิเปิดฮีตเตอร์', 'error');
+                return;
+            }
+            
+            if (formData.humMax <= formData.humMin) {
+                showStatus('❌ ความชื้นสูงสุดต้องมากกว่าความชื้นต่ำสุด', 'error');
+                return;
+            }
+            
+            // Save to API
+            fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showStatus('✅ บันทึกการตั้งค่าสำเร็จ!', 'success');
+                    console.log('Settings saved successfully');
+                } else {
+                    showStatus('❌ เกิดข้อผิดพลาดในการบันทึก', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error saving settings:', error);
+                showStatus('❌ ไม่สามารถบันทึกการตั้งค่าได้', 'error');
+            });
+        }
+        
+        // Show status message
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.className = `status-message ${type}`;
+            statusEl.style.display = 'block';
+            
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Load settings on page load
+        window.addEventListener('load', loadSettings);
+    </script>
+</body>
+</html>

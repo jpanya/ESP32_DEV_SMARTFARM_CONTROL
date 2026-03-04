@@ -107,6 +107,54 @@ const unsigned long WEATHER_UPDATE_INTERVAL = 600000; // Update every 10 minutes
 float weather_lat = 0.0;
 float weather_lon = 0.0;
 
+// ======================================
+// AUTOMATION SETTINGS
+// ======================================
+
+// Temperature Control Settings
+float TEMP_FAN_ON = 30.0;      // เปิดพัดลมเมื่ออุณหภูมิเกิน 30°C
+float TEMP_FAN_OFF = 28.0;     // ปิดพัดลมเมื่ออุณหภูมิต่ำกว่า 28°C
+float TEMP_HEATER_ON = 20.0;   // เปิดฮีตเตอร์เมื่ออุณหภูมิต่ำกว่า 20°C
+float TEMP_HEATER_OFF = 22.0;  // ปิดฮีตเตอร์เมื่ออุณหภูมิสูงกว่า 22°C
+
+// Humidity Control Settings
+float HUM_MIN = 60.0;  // ความชื้นต่ำสุด (เปิดปั๊มน้ำ)
+float HUM_MAX = 80.0;  // ความชื้นสูงสุด (เปิดพัดลม)
+
+// Automation Enable/Disable
+bool autoTempEnabled = false;  // เปิด/ปิด ควบคุมอุณหภูมิอัตโนมัติ
+bool autoHumEnabled = false;   // เปิด/ปิด ควบคุมความชื้นอัตโนมัติ
+bool scheduleEnabled = false;  // เปิด/ปิด ระบบตั้งเวลา
+
+// Automation Timing
+unsigned long lastAutoCheck = 0;
+const unsigned long AUTO_CHECK_INTERVAL = 5000; // Check every 5 seconds
+
+// Schedule System
+struct Schedule {
+  uint8_t hour;
+  uint8_t minute;
+  uint8_t relayNum;  // 1=Fan, 2=Pump, 3=Heater
+  bool turnOn;       // true=เปิด, false=ปิด
+  bool enabled;
+};
+
+// Default schedules (can be modified via Web)
+Schedule schedules[10] = {
+  {6, 0, 2, true, false},   // 06:00 เปิดปั๊มน้ำ
+  {6, 30, 2, false, false}, // 06:30 ปิดปั๊มน้ำ
+  {12, 0, 1, true, false},  // 12:00 เปิดพัดลม
+  {18, 0, 1, false, false}, // 18:00 ปิดพัดลม
+  {20, 0, 3, true, false},  // 20:00 เปิดฮีตเตอร์
+  {7, 0, 3, false, false},  // 07:00 ปิดฮีตเตอร์
+  {0, 0, 0, false, false},
+  {0, 0, 0, false, false},
+  {0, 0, 0, false, false},
+  {0, 0, 0, false, false}
+};
+
+int lastScheduleMinute = -1; // Track last executed minute to prevent double execution
+
 // Pin definitions (from HardwareESP32Config.md)
 const uint8_t PIN_SW1 = 34; // SW1 = Enter/Select (Active Low)
 const uint8_t PIN_SW2 = 35; // SW2 = Down (Active Low)
@@ -168,6 +216,14 @@ void switchPage();
 void fetchWeatherData();
 void fetchAirQualityData();
 String getAQIDescription(int aqi_value);
+
+// Automation functions
+void autoTemperatureControl();
+void autoHumidityControl();
+void autoWaterLevelControl();
+void checkSchedules();
+void saveConfigToSPIFFS();
+void loadConfigFromSPIFFS();
 void setupWebServer();
 String getSensorDataJSON();
 String getRelayStatusJSON();
@@ -798,6 +854,219 @@ void updateDisplayPage2() {
   display.display();
 }
 
+// ===== AUTOMATION FUNCTIONS =====
+
+// Auto Temperature Control
+void autoTemperatureControl() {
+  if (!autoTempEnabled) return;
+  
+  float temp = currentTemperature;
+  
+  // Fan Control (ระบายความร้อน)
+  if (temp >= TEMP_FAN_ON && !relayFan.getState()) {
+    relayFan.on();
+    Serial.printf("AUTO: Fan ON - Temp %.1f°C >= %.1f°C\n", temp, TEMP_FAN_ON);
+  } else if (temp <= TEMP_FAN_OFF && relayFan.getState()) {
+    relayFan.off();
+    Serial.printf("AUTO: Fan OFF - Temp %.1f°C <= %.1f°C\n", temp, TEMP_FAN_OFF);
+  }
+  
+  // Heater Control (เพิ่มความร้อน)
+  if (temp <= TEMP_HEATER_ON && !relayHeater.getState()) {
+    relayHeater.on();
+    Serial.printf("AUTO: Heater ON - Temp %.1f°C <= %.1f°C\n", temp, TEMP_HEATER_ON);
+  } else if (temp >= TEMP_HEATER_OFF && relayHeater.getState()) {
+    relayHeater.off();
+    Serial.printf("AUTO: Heater OFF - Temp %.1f°C >= %.1f°C\n", temp, TEMP_HEATER_OFF);
+  }
+}
+
+// Auto Humidity Control
+void autoHumidityControl() {
+  if (!autoHumEnabled) return;
+  
+  float humidity = xymd03_humidity;
+  
+  // ถ้าความชื้นต่ำเกินไป เปิดปั๊มน้ำ (พ่นหมอก)
+  if (humidity < HUM_MIN && !relayPump.getState()) {
+    // ตรวจสอบว่าน้ำไม่แห้งก่อน
+    if (!iso1.isActive()) {
+      relayPump.on();
+      Serial.printf("AUTO: Pump ON - Humidity %.1f%% < %.1f%%\n", humidity, HUM_MIN);
+    } else {
+      Serial.println("AUTO: Cannot turn on Pump - Tank is DRY!");
+    }
+  } 
+  // ถ้าความชื้นสูงเกินไป เปิดพัดลม (ระบายความชื้น)
+  else if (humidity > HUM_MAX) {
+    if (!relayFan.getState()) {
+      relayFan.on();
+      Serial.printf("AUTO: Fan ON - Humidity %.1f%% > %.1f%%\n", humidity, HUM_MAX);
+    }
+    if (relayPump.getState()) {
+      relayPump.off();
+      Serial.println("AUTO: Pump OFF - Humidity too high");
+    }
+  }
+  // ถ้าความชื้นปกติ ปิดปั๊ม
+  else if (humidity >= HUM_MIN && humidity <= HUM_MAX) {
+    if (relayPump.getState()) {
+      relayPump.off();
+      Serial.printf("AUTO: Pump OFF - Humidity normal (%.1f%%)\n", humidity);
+    }
+  }
+}
+
+// Auto Water Level Safety Control
+void autoWaterLevelControl() {
+  // ISO1 = Tank Dry Sensor (น้ำแห้ง)
+  // ISO2 = Tank Overflow Sensor (น้ำล้น)
+  
+  // ถ้าน้ำแห้ง (ISO1 Active) ปิดปั๊มทันที
+  if (iso1.isActive() && relayPump.getState()) {
+    relayPump.off();
+    Serial.println("SAFETY: Pump OFF - Tank is DRY!");
+  }
+  
+  // ถ้าน้ำล้น (ISO2 Active) ปิดปั๊มทันที
+  if (iso2.isActive() && relayPump.getState()) {
+    relayPump.off();
+    Serial.println("SAFETY: Pump OFF - Tank OVERFLOW!");
+  }
+}
+
+// Schedule System
+void checkSchedules() {
+  if (!scheduleEnabled) return;
+  
+  // Get current time (requires NTP sync)
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    return; // No time available
+  }
+  
+  int currentMinute = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+  
+  // Prevent double execution in the same minute
+  if (currentMinute == lastScheduleMinute) {
+    return;
+  }
+  
+  lastScheduleMinute = currentMinute;
+  
+  // Check each schedule
+  for (int i = 0; i < 10; i++) {
+    if (!schedules[i].enabled || schedules[i].relayNum == 0) continue;
+    
+    if (timeinfo.tm_hour == schedules[i].hour && 
+        timeinfo.tm_min == schedules[i].minute) {
+      
+      DevRelayWithTimer* relay = nullptr;
+      const char* relayName = "";
+      
+      switch(schedules[i].relayNum) {
+        case 1: relay = &relayFan; relayName = "Fan"; break;
+        case 2: relay = &relayPump; relayName = "Pump"; break;
+        case 3: relay = &relayHeater; relayName = "Heater"; break;
+      }
+      
+      if (relay) {
+        if (schedules[i].turnOn) {
+          relay->on();
+          Serial.printf("SCHEDULE: %s ON at %02d:%02d\n", 
+                       relayName, schedules[i].hour, schedules[i].minute);
+        } else {
+          relay->off();
+          Serial.printf("SCHEDULE: %s OFF at %02d:%02d\n", 
+                       relayName, schedules[i].hour, schedules[i].minute);
+        }
+      }
+    }
+  }
+}
+
+// Save config to SPIFFS
+void saveConfigToSPIFFS() {
+  File file = SPIFFS.open("/config.json", "w");
+  if (!file) {
+    Serial.println("Failed to open config file for writing");
+    return;
+  }
+  
+  JsonDocument doc;
+  doc["tempFanOn"] = TEMP_FAN_ON;
+  doc["tempFanOff"] = TEMP_FAN_OFF;
+  doc["tempHeaterOn"] = TEMP_HEATER_ON;
+  doc["tempHeaterOff"] = TEMP_HEATER_OFF;
+  doc["humMin"] = HUM_MIN;
+  doc["humMax"] = HUM_MAX;
+  doc["autoTempEnabled"] = autoTempEnabled;
+  doc["autoHumEnabled"] = autoHumEnabled;
+  doc["scheduleEnabled"] = scheduleEnabled;
+  doc["cityName"] = cityName;
+  
+  // Save schedules
+  JsonArray schedArray = doc["schedules"].to<JsonArray>();
+  for (int i = 0; i < 10; i++) {
+    schedArray[i]["hour"] = schedules[i].hour;
+    schedArray[i]["minute"] = schedules[i].minute;
+    schedArray[i]["relayNum"] = schedules[i].relayNum;
+    schedArray[i]["turnOn"] = schedules[i].turnOn;
+    schedArray[i]["enabled"] = schedules[i].enabled;
+  }
+  
+  serializeJson(doc, file);
+  file.close();
+  Serial.println("Config saved to SPIFFS");
+}
+
+// Load config from SPIFFS
+void loadConfigFromSPIFFS() {
+  File file = SPIFFS.open("/config.json", "r");
+  if (!file) {
+    Serial.println("No config file found, using defaults");
+    return;
+  }
+  
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  
+  if (error) {
+    Serial.println("Failed to parse config file");
+    return;
+  }
+  
+  // Load settings
+  TEMP_FAN_ON = doc["tempFanOn"] | TEMP_FAN_ON;
+  TEMP_FAN_OFF = doc["tempFanOff"] | TEMP_FAN_OFF;
+  TEMP_HEATER_ON = doc["tempHeaterOn"] | TEMP_HEATER_ON;
+  TEMP_HEATER_OFF = doc["tempHeaterOff"] | TEMP_HEATER_OFF;
+  HUM_MIN = doc["humMin"] | HUM_MIN;
+  HUM_MAX = doc["humMax"] | HUM_MAX;
+  autoTempEnabled = doc["autoTempEnabled"] | autoTempEnabled;
+  autoHumEnabled = doc["autoHumEnabled"] | autoHumEnabled;
+  scheduleEnabled = doc["scheduleEnabled"] | scheduleEnabled;
+  cityName = doc["cityName"] | cityName;
+  
+  // Load schedules
+  JsonArray schedArray = doc["schedules"];
+  if (schedArray) {
+    int idx = 0;
+    for (JsonObject sched : schedArray) {
+      if (idx >= 10) break;
+      schedules[idx].hour = sched["hour"];
+      schedules[idx].minute = sched["minute"];
+      schedules[idx].relayNum = sched["relayNum"];
+      schedules[idx].turnOn = sched["turnOn"];
+      schedules[idx].enabled = sched["enabled"];
+      idx++;
+    }
+  }
+  
+  Serial.println("Config loaded from SPIFFS");
+}
+
 // ===== WEB SERVER FUNCTIONS =====
 
 // Get sensor data as JSON
@@ -863,6 +1132,11 @@ void setupWebServer() {
   // Serve index.html from SPIFFS
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(SPIFFS, "/index.html", "text/html");
+  });
+  
+  // Serve settings.html from SPIFFS
+  server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(SPIFFS, "/settings.html", "text/html");
   });
   
   // API: Get system info
@@ -963,6 +1237,112 @@ void setupWebServer() {
     Serial.println("Web: Heater OFF");
   });
   
+  // API: Get automation config
+  server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+    Serial.println("API: /api/config GET called");
+    JsonDocument doc;
+    
+    doc["tempFanOn"] = TEMP_FAN_ON;
+    doc["tempFanOff"] = TEMP_FAN_OFF;
+    doc["tempHeaterOn"] = TEMP_HEATER_ON;
+    doc["tempHeaterOff"] = TEMP_HEATER_OFF;
+    doc["humMin"] = HUM_MIN;
+    doc["humMax"] = HUM_MAX;
+    doc["autoTempEnabled"] = autoTempEnabled;
+    doc["autoHumEnabled"] = autoHumEnabled;
+    doc["scheduleEnabled"] = scheduleEnabled;
+    doc["cityName"] = cityName;
+    
+    // Add schedules
+    JsonArray schedArray = doc["schedules"].to<JsonArray>();
+    for (int i = 0; i < 10; i++) {
+      if (schedules[i].relayNum == 0) continue; // Skip empty slots
+      JsonObject sched = schedArray.add<JsonObject>();
+      sched["id"] = i;
+      sched["hour"] = schedules[i].hour;
+      sched["minute"] = schedules[i].minute;
+      sched["relayNum"] = schedules[i].relayNum;
+      sched["turnOn"] = schedules[i].turnOn;
+      sched["enabled"] = schedules[i].enabled;
+    }
+    
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+  });
+  
+  // API: Save automation config
+  server.on("/api/config", HTTP_POST, 
+    [](AsyncWebServerRequest *request){}, 
+    NULL, 
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+      Serial.println("API: /api/config POST called");
+      
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, (char*)data);
+      
+      if (error) {
+        request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON\"}");
+        return;
+      }
+      
+      // Update settings (use .as<>() to get values)
+      if (!doc["tempFanOn"].isNull()) TEMP_FAN_ON = doc["tempFanOn"].as<float>();
+      if (!doc["tempFanOff"].isNull()) TEMP_FAN_OFF = doc["tempFanOff"].as<float>();
+      if (!doc["tempHeaterOn"].isNull()) TEMP_HEATER_ON = doc["tempHeaterOn"].as<float>();
+      if (!doc["tempHeaterOff"].isNull()) TEMP_HEATER_OFF = doc["tempHeaterOff"].as<float>();
+      if (!doc["humMin"].isNull()) HUM_MIN = doc["humMin"].as<float>();
+      if (!doc["humMax"].isNull()) HUM_MAX = doc["humMax"].as<float>();
+      if (!doc["autoTempEnabled"].isNull()) autoTempEnabled = doc["autoTempEnabled"].as<bool>();
+      if (!doc["autoHumEnabled"].isNull()) autoHumEnabled = doc["autoHumEnabled"].as<bool>();
+      if (!doc["scheduleEnabled"].isNull()) scheduleEnabled = doc["scheduleEnabled"].as<bool>();
+      
+      if (!doc["cityName"].isNull()) {
+        cityName = doc["cityName"].as<String>();
+        // Fetch new weather data for the new city
+        if (wifiConnected) {
+          fetchWeatherData();
+        }
+      }
+      
+      // Update schedules if provided
+      JsonArray schedArray = doc["schedules"].as<JsonArray>();
+      if (!schedArray.isNull()) {
+        int idx = 0;
+        for (JsonObject sched : schedArray) {
+          if (idx >= 10) break;
+          if (!sched["hour"].isNull()) schedules[idx].hour = sched["hour"].as<int>();
+          if (!sched["minute"].isNull()) schedules[idx].minute = sched["minute"].as<int>();
+          if (!sched["relayNum"].isNull()) schedules[idx].relayNum = sched["relayNum"].as<int>();
+          if (!sched["turnOn"].isNull()) schedules[idx].turnOn = sched["turnOn"].as<bool>();
+          if (!sched["enabled"].isNull()) schedules[idx].enabled = sched["enabled"].as<bool>();
+          idx++;
+        }
+      }
+      
+      // Save to SPIFFS
+      saveConfigToSPIFFS();
+      
+      request->send(200, "application/json", "{\"success\":true}");
+      Serial.println("Config updated and saved");
+  });
+  
+  // API: Get automation status
+  server.on("/api/automation/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["autoTempEnabled"] = autoTempEnabled;
+    doc["autoHumEnabled"] = autoHumEnabled;
+    doc["scheduleEnabled"] = scheduleEnabled;
+    doc["tempFanOn"] = TEMP_FAN_ON;
+    doc["tempFanOff"] = TEMP_FAN_OFF;
+    doc["currentTemp"] = currentTemperature;
+    doc["currentHum"] = xymd03_humidity;
+    
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+  });
+  
   // 404 handler
   server.onNotFound([](AsyncWebServerRequest *request) {
     request->send(404, "text/plain", "Not Found");
@@ -1061,10 +1441,19 @@ void setup() {
   // Initial weather data fetch (if WiFi connected)
   if (wifiConnected) {
     Serial.println("Fetching initial weather data...");
-    fetchWeatherData();
+    
+    // Configure NTP for schedule system
+    configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov"); // GMT+7 for Thailand
+    Serial.println("NTP configured for schedule system");
     
     // Start Web Server
     setupWebServer();
+    
+    // Load config from SPIFFS
+    loadConfigFromSPIFFS();
+    Serial.println("Automation system initialized");
+    
+    fetchWeatherData();
   }
 }
 
@@ -1094,6 +1483,30 @@ void loop() {
   // }
 
   delay(10);
+
+  // ===== AUTOMATION LOGIC =====
+  // Check automation every 5 seconds
+  if (millis() - lastAutoCheck >= AUTO_CHECK_INTERVAL) {
+    lastAutoCheck = millis();
+    
+    // Safety First: Always check water level
+    autoWaterLevelControl();
+    
+    // Temperature control
+    if (autoTempEnabled) {
+      autoTemperatureControl();
+    }
+    
+    // Humidity control
+    if (autoHumEnabled) {
+      autoHumidityControl();
+    }
+    
+    // Schedule system
+    if (scheduleEnabled) {
+      checkSchedules();
+    }
+  }
 
   // Update XY-MD03 reading at interval
   if (millis() - lastXYMD03Update >= XYMD03_UPDATE_INTERVAL) {
