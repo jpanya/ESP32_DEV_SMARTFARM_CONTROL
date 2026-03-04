@@ -13,6 +13,12 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
 
+// HTTP Client for API requests
+#include <HTTPClient.h>
+
+// JSON parsing for API responses
+#include <ArduinoJson.h>
+
 // DS18B20 Temperature Sensor
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -61,8 +67,38 @@ float simTempDeltaXY = 0.3;
 float simHumDeltaXY = 1.0;
 
 // Display page management
-uint8_t currentPage = 0; // 0=Main page, 1=XY-MD03 page
-const uint8_t MAX_PAGES = 2;
+uint8_t currentPage = 0; // 0=Main page, 1=XY-MD03 page, 2=Weather page
+const uint8_t MAX_PAGES = 3;
+
+// OpenWeather API Configuration
+const String OPENWEATHER_API_KEY = "5285b3436c86bdab46069027fd961d09";
+String cityName = "Nakhon Si Thammarat"; // Default city (user can change)
+
+// Weather data variables
+float weather_temp = 0.0;
+float weather_feels_like = 0.0;
+float weather_humidity = 0.0;
+float weather_pressure = 0.0;
+float weather_wind_speed = 0.0;
+String weather_description = "";
+String weather_main = "";
+
+// Air quality data variables
+int aqi = 0; // Air Quality Index (1=Good, 2=Fair, 3=Moderate, 4=Poor, 5=Very Poor)
+float pm2_5 = 0.0; // PM2.5 concentration
+float pm10 = 0.0;  // PM10 concentration
+float co = 0.0;    // Carbon Monoxide
+float no2 = 0.0;   // Nitrogen Dioxide
+float o3 = 0.0;    // Ozone
+
+// Weather update timing
+bool weatherDataAvailable = false;
+unsigned long lastWeatherUpdate = 0;
+const unsigned long WEATHER_UPDATE_INTERVAL = 600000; // Update every 10 minutes (600000 ms)
+
+// Coordinates for air quality (from current weather API)
+float weather_lat = 0.0;
+float weather_lon = 0.0;
 
 // Pin definitions (from HardwareESP32Config.md)
 const uint8_t PIN_SW1 = 34; // SW1 = Enter/Select (Active Low)
@@ -110,6 +146,7 @@ void showWelcome();
 void updateDisplay();
 void updateDisplayPage0(); // Main page
 void updateDisplayPage1(); // XY-MD03 page
+void updateDisplayPage2(); // Weather page
 void showCountdown(int seconds);
 void setupWiFi();
 void checkWiFiResetButton();
@@ -118,6 +155,9 @@ void simulateTemperature();
 void readXYMD03();
 void simulateXYMD03();
 void switchPage();
+void fetchWeatherData();
+void fetchAirQualityData();
+String getAQIDescription(int aqi_value);
 
 // Callback handlers
 void onSw1Click() {
@@ -456,7 +496,7 @@ void updateDisplayPage0() {
   display.setCursor(2, 0);
   display.print("ESP32 Farm");
   display.setCursor(108, 0);
-  display.print("1/2"); // Page indicator
+  display.print("1/3"); // Page indicator
 
   // ========== TEMPERATURE DISPLAY ==========
   display.setTextSize(1);
@@ -518,7 +558,7 @@ void updateDisplayPage1() {
   display.setCursor(2, 0);
   display.print("XY-MD03");
   display.setCursor(100, 0);
-  display.print("2/2"); // Page indicator
+  display.print("2/3"); // Page indicator
 
   // ========== SENSOR STATUS ==========
   display.setCursor(2, 13);
@@ -553,6 +593,198 @@ void updateDisplayPage1() {
   display.display();
 }
 
+// Get AQI description text
+String getAQIDescription(int aqi_value) {
+  switch(aqi_value) {
+    case 1: return "Good";
+    case 2: return "Fair";
+    case 3: return "Moderate";
+    case 4: return "Poor";
+    case 5: return "Very Poor";
+    default: return "Unknown";
+  }
+}
+
+// Fetch weather data from OpenWeather API
+void fetchWeatherData() {
+  if (!wifiConnected) {
+    Serial.println("WiFi not connected. Cannot fetch weather data.");
+    return;
+  }
+
+  HTTPClient http;
+  
+  // URL encode city name (replace spaces with %20 for URL)
+  String encodedCity = cityName;
+  encodedCity.replace(" ", "%20");
+  
+  // Build URL for current weather
+  String url = "http://api.openweathermap.org/data/2.5/weather?q=" + encodedCity + 
+               "&appid=" + OPENWEATHER_API_KEY + "&units=metric";
+  
+  Serial.println("Fetching weather data for: " + cityName);
+  Serial.println("URL: " + url);
+  
+  http.begin(url);
+  int httpCode = http.GET();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    String payload = http.getString();
+    Serial.println("Weather API Response: " + payload);
+    
+    // Parse JSON
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, payload);
+    
+    if (!error) {
+      // Extract weather data
+      weather_temp = doc["main"]["temp"];
+      weather_feels_like = doc["main"]["feels_like"];
+      weather_humidity = doc["main"]["humidity"];
+      weather_pressure = doc["main"]["pressure"];
+      weather_wind_speed = doc["wind"]["speed"];
+      weather_description = doc["weather"][0]["description"].as<String>();
+      weather_main = doc["weather"][0]["main"].as<String>();
+      
+      // Get coordinates for air quality API
+      weather_lat = doc["coord"]["lat"];
+      weather_lon = doc["coord"]["lon"];
+      
+      weatherDataAvailable = true;
+      
+      Serial.println("Weather data updated successfully!");
+      Serial.printf("Temp: %.1f°C, Humidity: %.1f%%, Description: %s\n", 
+                    weather_temp, weather_humidity, weather_description.c_str());
+      
+      // Fetch air quality data using coordinates
+      fetchAirQualityData();
+      
+    } else {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+      weatherDataAvailable = false;
+    }
+  } else {
+    Serial.printf("HTTP GET failed, error: %s\n", http.errorToString(httpCode).c_str());
+    weatherDataAvailable = false;
+  }
+  
+  http.end();
+}
+
+// Fetch air quality data from OpenWeather API
+void fetchAirQualityData() {
+  if (!wifiConnected || weather_lat == 0.0 || weather_lon == 0.0) {
+    Serial.println("Cannot fetch air quality: WiFi not connected or coordinates not available.");
+    return;
+  }
+
+  HTTPClient http;
+  
+  // Build URL for air pollution
+  String url = "http://api.openweathermap.org/data/2.5/air_pollution?lat=" + 
+               String(weather_lat, 4) + "&lon=" + String(weather_lon, 4) + 
+               "&appid=" + OPENWEATHER_API_KEY;
+  
+  Serial.println("Fetching air quality data...");
+  Serial.println("URL: " + url);
+  
+  http.begin(url);
+  int httpCode = http.GET();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    String payload = http.getString();
+    Serial.println("Air Quality API Response: " + payload);
+    
+    // Parse JSON
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, payload);
+    
+    if (!error) {
+      // Extract air quality data
+      aqi = doc["list"][0]["main"]["aqi"];
+      pm2_5 = doc["list"][0]["components"]["pm2_5"];
+      pm10 = doc["list"][0]["components"]["pm10"];
+      co = doc["list"][0]["components"]["co"];
+      no2 = doc["list"][0]["components"]["no2"];
+      o3 = doc["list"][0]["components"]["o3"];
+      
+      Serial.println("Air quality data updated successfully!");
+      Serial.printf("AQI: %d (%s), PM2.5: %.1f μg/m³, PM10: %.1f μg/m³\n", 
+                    aqi, getAQIDescription(aqi).c_str(), pm2_5, pm10);
+      
+    } else {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+    }
+  } else {
+    Serial.printf("HTTP GET failed, error: %s\n", http.errorToString(httpCode).c_str());
+  }
+  
+  http.end();
+}
+
+// Weather display page (Page 2)
+void updateDisplayPage2() {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+
+  // ========== HEADER ==========
+  display.setTextSize(1);
+  display.setCursor(2, 0);
+  display.print(cityName);
+  display.setCursor(100, 0);
+  display.print("3/3"); // Page indicator
+
+  if (!weatherDataAvailable) {
+    // Show message if no data available
+    display.setCursor(10, 28);
+    display.print("Fetching data...");
+    display.display();
+    return;
+  }
+
+  // ========== WEATHER INFO ==========
+  display.setCursor(2, 11);
+  display.print("Temp: ");
+  display.print(weather_temp, 1);
+  display.print("C");
+  
+  display.setCursor(70, 11);
+  display.print("H:");
+  display.print((int)weather_humidity);
+  display.print("%");
+
+  display.setCursor(2, 21);
+  display.print("Feels: ");
+  display.print(weather_feels_like, 1);
+  display.print("C");
+
+  // Weather description (truncate if too long)
+  display.setCursor(2, 31);
+  String desc = weather_description;
+  if (desc.length() > 20) {
+    desc = desc.substring(0, 20);
+  }
+  display.print(desc);
+
+  // ========== AIR QUALITY ==========
+  display.setCursor(2, 41);
+  display.print("AQI:");
+  display.print(getAQIDescription(aqi));
+  display.print(" (");
+  display.print(aqi);
+  display.print(")");
+
+  display.setCursor(2, 51);
+  display.print("PM2.5:");
+  display.print(pm2_5, 1);
+  display.print(" PM10:");
+  display.print(pm10, 0);
+
+  display.display();
+}
+
 // Main update display function - route to correct page
 void updateDisplay() {
   switch (currentPage) {
@@ -561,6 +793,9 @@ void updateDisplay() {
       break;
     case 1:
       updateDisplayPage1();
+      break;
+    case 2:
+      updateDisplayPage2();
       break;
     default:
       currentPage = 0;
@@ -631,6 +866,12 @@ void setup() {
   sw1.onClick(onSw1Click);
   sw2.onClick(onSw2Click);
   sw3.onClick(onSw3Click);
+
+  // Initial weather data fetch (if WiFi connected)
+  if (wifiConnected) {
+    Serial.println("Fetching initial weather data...");
+    fetchWeatherData();
+  }
 }
 
 void loop() {
@@ -670,6 +911,13 @@ void loop() {
   if (millis() - lastTempUpdate >= TEMP_UPDATE_INTERVAL) {
     lastTempUpdate = millis();
     readTemperature();
+  }
+
+  // Update weather data at interval (every 10 minutes)
+  if (wifiConnected && (millis() - lastWeatherUpdate >= WEATHER_UPDATE_INTERVAL)) {
+    lastWeatherUpdate = millis();
+    Serial.println("Periodic weather update...");
+    fetchWeatherData();
   }
 
   // Update display at interval
