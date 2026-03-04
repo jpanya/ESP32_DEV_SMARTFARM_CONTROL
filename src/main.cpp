@@ -13,10 +13,18 @@
 #include <WiFiManager.h>
 
 // OLED display configuration
+#ifndef SCREEN_WIDTH
 #define SCREEN_WIDTH 128
+#endif
+#ifndef SCREEN_HEIGHT
 #define SCREEN_HEIGHT 64
+#endif
+#ifndef OLED_RESET
 #define OLED_RESET -1
+#endif
+#ifndef SCREEN_ADDRESS
 #define SCREEN_ADDRESS 0x3C
+#endif
 
 // Instantiate OLED display object
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
