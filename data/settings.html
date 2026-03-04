@@ -13,7 +13,7 @@
         
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #52b788 0%, #b7e4c7 100%);
             min-height: 100vh;
             padding: 20px;
         }
@@ -33,7 +33,7 @@
         }
         
         h1 {
-            color: #667eea;
+            color: #40916c;
             font-size: 2em;
             margin-bottom: 10px;
         }
@@ -47,7 +47,7 @@
         
         .nav-btn {
             padding: 10px 20px;
-            background: #667eea;
+            background: #40916c;
             color: white;
             border: none;
             border-radius: 8px;
@@ -58,7 +58,7 @@
         }
         
         .nav-btn:hover {
-            background: #5568d3;
+            background: #2d6a4f;
         }
         
         .card {
@@ -76,7 +76,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            border-bottom: 2px solid #667eea;
+            border-bottom: 2px solid #40916c;
             padding-bottom: 10px;
         }
         
@@ -105,7 +105,7 @@
         
         input[type="number"]:focus, input[type="text"]:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #40916c;
         }
         
         .switch-container {
@@ -181,44 +181,186 @@
             transform: translateY(-2px);
         }
         
+        /* ====== Modern Schedule Card Styles ====== */
         .schedule-list {
-            display: grid;
-            gap: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
         
-        .schedule-item {
-            display: grid;
-            grid-template-columns: 60px 60px 100px 80px 60px auto;
-            gap: 10px;
+        .schedule-card {
+            background: #fafafa;
+            border: 2px solid #e8e8e8;
+            border-radius: 14px;
+            padding: 16px;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        
+        .schedule-card.enabled {
+            background: #fff;
+            border-color: #40916c;
+            box-shadow: 0 3px 15px rgba(64, 145, 108, 0.18);
+        }
+        
+        .sched-header {
+            display: flex;
             align-items: center;
-            padding: 10px;
-            background: #f5f5f5;
-            border-radius: 8px;
+            gap: 10px;
+            flex-wrap: wrap;
         }
         
-        .schedule-item input, .schedule-item select {
-            padding: 5px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+        .sched-time-input {
+            font-size: 1.55em;
+            font-weight: bold;
+            color: #333;
+            border: none;
+            border-bottom: 2px solid #40916c;
+            background: transparent;
+            padding: 4px 6px;
+            width: 130px;
+            cursor: pointer;
+        }
+        
+        .sched-time-input:focus {
+            outline: none;
+            border-bottom-color: #2d6a4f;
+        }
+        
+        .sched-relay-select {
+            padding: 8px 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 0.95em;
+            background: white;
+            cursor: pointer;
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .sched-relay-select:focus {
+            outline: none;
+            border-color: #40916c;
+        }
+        
+        .action-toggle {
+            display: flex;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #e0e0e0;
+        }
+        
+        .action-btn {
+            padding: 7px 13px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.85em;
+            transition: all 0.2s;
+            background: #f5f5f5;
+            color: #bbb;
+        }
+        
+        .action-btn.active-on {
+            background: linear-gradient(135deg, #4caf50, #66bb6a);
+            color: white;
+        }
+        
+        .action-btn.active-off {
+            background: linear-gradient(135deg, #ef5350, #f44336);
+            color: white;
         }
         
         .delete-btn {
+            background: #ffebee;
+            color: #c62828;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background 0.2s;
+            margin-left: auto;
+        }
+        
+        .delete-btn:hover {
             background: #f44336;
             color: white;
-            border: none;
-            padding: 5px 10px;
-            border-radius: 5px;
+        }
+        
+        .day-picker {
+            display: flex;
+            gap: 5px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .day-picker-label {
+            font-size: 0.8em;
+            color: #888;
+            margin-right: 2px;
+        }
+        
+        .day-btn {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            border: 2px solid #ddd;
+            background: white;
             cursor: pointer;
+            font-size: 0.7em;
+            font-weight: bold;
+            color: #999;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        
+        .day-btn.selected {
+            background: linear-gradient(135deg, #40916c, #2d6a4f);
+            border-color: #40916c;
+            color: white;
+        }
+        
+        .everyday-btn {
+            width: auto;
+            border-radius: 17px;
+            padding: 0 12px;
+            font-size: 0.72em;
+        }
+        
+        .sched-summary {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
         }
         
         .add-btn {
-            background: #2196F3;
-            color: white;
-            border: none;
-            padding: 10px;
-            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+            color: #40916c;
+            border: 2px dashed #40916c;
+            border-radius: 12px;
+            font-size: 1em;
+            font-weight: bold;
             cursor: pointer;
-            margin-top: 10px;
+            transition: all 0.3s;
+            margin-top: 4px;
+        }
+        
+        .add-btn:hover {
+            background: linear-gradient(135deg, #40916c, #2d6a4f);
+            color: white;
+            border-style: solid;
         }
         
         .status-message {
@@ -241,8 +383,15 @@
         }
         
         @media (max-width: 768px) {
-            .schedule-item {
-                grid-template-columns: 1fr;
+            .sched-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .sched-relay-select {
+                width: 100%;
+            }
+            .delete-btn {
+                margin-left: 0;
             }
         }
     </style>
@@ -412,60 +561,103 @@
                 });
         }
         
-        // Render schedules
+        // Render schedules as modern cards
         function renderSchedules(schedules) {
             const container = document.getElementById('scheduleList');
             container.innerHTML = '';
             
+            if (!schedules || schedules.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:30px;color:#aaa;"><div style="font-size:3em;margin-bottom:10px;">📅</div><p style="font-size:1.1em;">ยังไม่มีตารางเวลา</p><p style="font-size:0.85em;margin-top:6px;">กด "เพิ่มตารางเวลา" เพื่อสร้าง</p></div>';
+                return;
+            }
+            
+            const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+            const relayIcons = {1: '🌀', 2: '💦', 3: '🔥'};
+            const relayLabels = {1: 'พัดลม (Fan)', 2: 'ปั๊มน้ำ (Pump)', 3: 'ฮีตเตอร์ (Heater)'};
+            
             schedules.forEach((sched, index) => {
+                const hour = String(sched.hour).padStart(2, '0');
+                const minute = String(sched.minute).padStart(2, '0');
+                const timeStr = `${hour}:${minute}`;
+                const days = (sched.days !== undefined) ? sched.days : 0x7F;
+                
+                const dayBtns = dayNames.map((name, d) => {
+                    const isSel = (days & (1 << d)) ? 'selected' : '';
+                    return `<button type="button" class="day-btn ${isSel}" onclick="toggleDay(${index}, ${d}, this)">${name}</button>`;
+                }).join('');
+                
+                const allSel = (days === 0x7F) ? 'selected' : '';
+                
+                const relayOptions = [1, 2, 3].map(v =>
+                    `<option value="${v}" ${sched.relayNum == v ? 'selected' : ''}>${relayIcons[v]} ${relayLabels[v]}</option>`
+                ).join('');
+                
+                const onActive = sched.turnOn ? 'active-on' : '';
+                const offActive = !sched.turnOn ? 'active-off' : '';
+                
+                let daySummary;
+                if (days === 0x7F) daySummary = 'ทุกวัน';
+                else if (days === 0) daySummary = '⚠️ ไม่ได้เลือกวัน';
+                else daySummary = dayNames.filter((_, d) => days & (1 << d)).join(' ');
+                
                 const div = document.createElement('div');
-                div.className = 'schedule-item';
+                div.className = `schedule-card ${sched.enabled ? 'enabled' : ''}`;
+                div.dataset.index = index;
                 div.innerHTML = `
-                    <input type="number" value="${sched.hour}" min="0" max="23" 
-                           data-id="${index}" data-field="hour" placeholder="ชั่วโมง">
-                    <input type="number" value="${sched.minute}" min="0" max="59" 
-                           data-id="${index}" data-field="minute" placeholder="นาที">
-                    <select data-id="${index}" data-field="relayNum">
-                        <option value="1" ${sched.relayNum==1?'selected':''}>พัดลม (Fan)</option>
-                        <option value="2" ${sched.relayNum==2?'selected':''}>ปั๊มน้ำ (Pump)</option>
-                        <option value="3" ${sched.relayNum==3?'selected':''}>ฮีตเตอร์ (Heater)</option>
-                    </select>
-                    <select data-id="${index}" data-field="turnOn">
-                        <option value="true" ${sched.turnOn?'selected':''}>เปิด (ON)</option>
-                        <option value="false" ${!sched.turnOn?'selected':''}>ปิด (OFF)</option>
-                    </select>
-                    <label class="switch">
-                        <input type="checkbox" ${sched.enabled?'checked':''} 
-                               data-id="${index}" data-field="enabled">
-                        <span class="slider"></span>
-                    </label>
-                    <button class="delete-btn" onclick="deleteSchedule(${index})">🗑️</button>
+                    <div class="sched-header">
+                        <label class="switch" title="เปิด/ปิดตารางเวลานี้">
+                            <input type="checkbox" class="sched-enabled" ${sched.enabled ? 'checked' : ''}
+                                   onchange="onScheduleEnabledChange(${index}, this)">
+                            <span class="slider"></span>
+                        </label>
+                        <input type="time" class="sched-time-input" value="${timeStr}" title="เลือกเวลา">
+                        <select class="sched-relay-select">${relayOptions}</select>
+                        <div class="action-toggle">
+                            <button type="button" class="action-btn ${onActive}"
+                                    onclick="setAction(${index}, true, this)">⚡ เปิด</button>
+                            <button type="button" class="action-btn ${offActive}"
+                                    onclick="setAction(${index}, false, this)">🔴 ปิด</button>
+                        </div>
+                        <button type="button" class="delete-btn" onclick="deleteSchedule(${index})" title="ลบ">🗑️</button>
+                    </div>
+                    <div class="day-picker">
+                        <span class="day-picker-label">วัน:</span>
+                        ${dayBtns}
+                        <button type="button" class="day-btn everyday-btn ${allSel}"
+                                onclick="toggleAllDays(${index}, this)">ทุกวัน</button>
+                    </div>
+                    <div class="sched-summary">
+                        📌 ${relayIcons[sched.relayNum] || ''} ${relayLabels[sched.relayNum] || '?'} — ${sched.turnOn ? '⚡ เปิด' : '🔴 ปิด'} เวลา ${timeStr} น. (${daySummary})
+                    </div>
                 `;
                 container.appendChild(div);
             });
-            
-            if (schedules.length === 0) {
-                container.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">ยังไม่มีตารางเวลา กด "เพิ่มตารางเวลา" เพื่อสร้าง</p>';
-            }
         }
         
         // Add new schedule
         function addSchedule() {
             if (!config.schedules) config.schedules = [];
-            if (config.schedules.length >= 10) {
-                showStatus('❌ สามารถเพิ่มตารางเวลาได้สูงสุด 10 รายการ', 'error');
+            if (config.schedules.length >= 20) {
+                showStatus('❌ สามารถเพิ่มตารางเวลาได้สูงสุด 20 รายการ', 'error');
                 return;
             }
             
             config.schedules.push({
-                hour: 0,
+                hour: 6,
                 minute: 0,
-                relayNum: 1,
+                relayNum: 2,
                 turnOn: true,
-                enabled: false
+                enabled: false,
+                days: 0x7F
             });
             
             renderSchedules(config.schedules);
+            setTimeout(() => {
+                const list = document.getElementById('scheduleList');
+                if (list.lastElementChild) {
+                    list.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                }
+            }, 100);
         }
         
         // Delete schedule
@@ -476,19 +668,79 @@
             }
         }
         
-        // Get schedules from form
+        // Toggle a specific day on a schedule card
+        function toggleDay(index, day, btn) {
+            if (!config.schedules || !config.schedules[index]) return;
+            if (config.schedules[index].days === undefined) config.schedules[index].days = 0x7F;
+            config.schedules[index].days ^= (1 << day);
+            btn.classList.toggle('selected');
+            // Update ทุกวัน button
+            const card = document.querySelector(`[data-index="${index}"]`);
+            if (card) {
+                const evBtn = card.querySelector('.everyday-btn');
+                if (evBtn) evBtn.classList.toggle('selected', config.schedules[index].days === 0x7F);
+                updateSchedSummary(card, index);
+            }
+        }
+        
+        // Toggle all days for a schedule
+        function toggleAllDays(index, btn) {
+            if (!config.schedules || !config.schedules[index]) return;
+            config.schedules[index].days = (config.schedules[index].days === 0x7F) ? 0 : 0x7F;
+            renderSchedules(config.schedules);
+        }
+        
+        // Set action (ON/OFF) for a schedule
+        function setAction(index, turnOn, btn) {
+            if (!config.schedules || !config.schedules[index]) return;
+            config.schedules[index].turnOn = turnOn;
+            const toggle = btn.closest('.action-toggle');
+            toggle.querySelectorAll('.action-btn').forEach(b => b.className = 'action-btn');
+            btn.classList.add(turnOn ? 'active-on' : 'active-off');
+            const card = btn.closest('.schedule-card');
+            if (card) updateSchedSummary(card, index);
+        }
+        
+        // Handle enable/disable toggle for a schedule card
+        function onScheduleEnabledChange(index, checkbox) {
+            if (!config.schedules || !config.schedules[index]) return;
+            config.schedules[index].enabled = checkbox.checked;
+            const card = checkbox.closest('.schedule-card');
+            if (card) card.classList.toggle('enabled', checkbox.checked);
+        }
+        
+        // Live-update the summary text at the bottom of a card
+        function updateSchedSummary(card, index) {
+            const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+            const relayIcons = {1: '🌀', 2: '💦', 3: '🔥'};
+            const relayLabels = {1: 'พัดลม (Fan)', 2: 'ปั๊มน้ำ (Pump)', 3: 'ฮีตเตอร์ (Heater)'};
+            const sched = config.schedules[index];
+            const days = sched.days !== undefined ? sched.days : 0x7F;
+            const daySummary = days === 0x7F ? 'ทุกวัน' : days === 0 ? '⚠️ ไม่ได้เลือกวัน'
+                : dayNames.filter((_, d) => days & (1 << d)).join(' ');
+            const timeVal = card.querySelector('.sched-time-input').value || '??:??';
+            const relayNum = parseInt(card.querySelector('.sched-relay-select').value) || 1;
+            const summaryEl = card.querySelector('.sched-summary');
+            if (summaryEl) {
+                summaryEl.innerHTML = `📌 ${relayIcons[relayNum] || ''} ${relayLabels[relayNum] || '?'} — ${sched.turnOn ? '⚡ เปิด' : '🔴 ปิด'} เวลา ${timeVal} น. (${daySummary})`;
+            }
+        }
+        
+        // Get schedules from form cards
         function getSchedulesFromForm() {
             const schedules = [];
-            const items = document.querySelectorAll('.schedule-item');
+            const cards = document.querySelectorAll('.schedule-card');
             
-            items.forEach(item => {
-                const hour = parseInt(item.querySelector('[data-field="hour"]').value) || 0;
-                const minute = parseInt(item.querySelector('[data-field="minute"]').value) || 0;
-                const relayNum = parseInt(item.querySelector('[data-field="relayNum"]').value) || 1;
-                const turnOn = item.querySelector('[data-field="turnOn"]').value === 'true';
-                const enabled = item.querySelector('[data-field="enabled"]').checked;
-                
-                schedules.push({ hour, minute, relayNum, turnOn, enabled });
+            cards.forEach((card, idx) => {
+                const timeVal = card.querySelector('.sched-time-input').value || '00:00';
+                const [hour, minute] = timeVal.split(':').map(Number);
+                const relayNum = parseInt(card.querySelector('.sched-relay-select').value) || 1;
+                const turnOn = card.querySelector('.action-btn.active-on') !== null;
+                const enabled = card.querySelector('.sched-enabled').checked;
+                const days = (config.schedules && config.schedules[idx] !== undefined)
+                    ? (config.schedules[idx].days !== undefined ? config.schedules[idx].days : 0x7F)
+                    : 0x7F;
+                schedules.push({ hour, minute, relayNum, turnOn, enabled, days });
             });
             
             return schedules;

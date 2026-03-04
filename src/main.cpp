@@ -131,26 +131,41 @@ unsigned long lastAutoCheck = 0;
 const unsigned long AUTO_CHECK_INTERVAL = 5000; // Check every 5 seconds
 
 // Schedule System
+// days bitmask: bit0=อา(Sun), bit1=จ(Mon), bit2=อ(Tue), bit3=พ(Wed), bit4=พฤ(Thu), bit5=ศ(Fri), bit6=ส(Sat)
+// 0x7F = ทุกวัน (every day)
 struct Schedule {
   uint8_t hour;
   uint8_t minute;
   uint8_t relayNum;  // 1=Fan, 2=Pump, 3=Heater
   bool turnOn;       // true=เปิด, false=ปิด
   bool enabled;
+  uint8_t days;      // Bitmask วันทำงาน (0x7F=ทุกวัน)
 };
 
+#define MAX_SCHEDULES 20
+
 // Default schedules (can be modified via Web)
-Schedule schedules[10] = {
-  {6, 0, 2, true, false},   // 06:00 เปิดปั๊มน้ำ
-  {6, 30, 2, false, false}, // 06:30 ปิดปั๊มน้ำ
-  {12, 0, 1, true, false},  // 12:00 เปิดพัดลม
-  {18, 0, 1, false, false}, // 18:00 ปิดพัดลม
-  {20, 0, 3, true, false},  // 20:00 เปิดฮีตเตอร์
-  {7, 0, 3, false, false},  // 07:00 ปิดฮีตเตอร์
-  {0, 0, 0, false, false},
-  {0, 0, 0, false, false},
-  {0, 0, 0, false, false},
-  {0, 0, 0, false, false}
+Schedule schedules[MAX_SCHEDULES] = {
+  {6, 0, 2, true, false, 0x7F},   // 06:00 เปิดปั๊มน้ำ ทุกวัน
+  {6, 30, 2, false, false, 0x7F}, // 06:30 ปิดปั๊มน้ำ ทุกวัน
+  {12, 0, 1, true, false, 0x7F},  // 12:00 เปิดพัดลม ทุกวัน
+  {18, 0, 1, false, false, 0x7F}, // 18:00 ปิดพัดลม ทุกวัน
+  {20, 0, 3, true, false, 0x7F},  // 20:00 เปิดฮีตเตอร์ ทุกวัน
+  {7, 0, 3, false, false, 0x7F},  // 07:00 ปิดฮีตเตอร์ ทุกวัน
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F},
+  {0, 0, 0, false, false, 0x7F}
 };
 
 int lastScheduleMinute = -1; // Track last executed minute to prevent double execution
@@ -955,8 +970,12 @@ void checkSchedules() {
   lastScheduleMinute = currentMinute;
   
   // Check each schedule
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < MAX_SCHEDULES; i++) {
     if (!schedules[i].enabled || schedules[i].relayNum == 0) continue;
+    
+    // Check day of week (bit0=Sun, bit1=Mon, ..., bit6=Sat)
+    uint8_t todayBit = (1 << timeinfo.tm_wday);
+    if (schedules[i].days != 0 && !(schedules[i].days & todayBit)) continue;
     
     if (timeinfo.tm_hour == schedules[i].hour && 
         timeinfo.tm_min == schedules[i].minute) {
@@ -1007,12 +1026,13 @@ void saveConfigToSPIFFS() {
   
   // Save schedules
   JsonArray schedArray = doc["schedules"].to<JsonArray>();
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < MAX_SCHEDULES; i++) {
     schedArray[i]["hour"] = schedules[i].hour;
     schedArray[i]["minute"] = schedules[i].minute;
     schedArray[i]["relayNum"] = schedules[i].relayNum;
     schedArray[i]["turnOn"] = schedules[i].turnOn;
     schedArray[i]["enabled"] = schedules[i].enabled;
+    schedArray[i]["days"] = schedules[i].days;
   }
   
   serializeJson(doc, file);
@@ -1054,12 +1074,13 @@ void loadConfigFromSPIFFS() {
   if (schedArray) {
     int idx = 0;
     for (JsonObject sched : schedArray) {
-      if (idx >= 10) break;
+      if (idx >= MAX_SCHEDULES) break;
       schedules[idx].hour = sched["hour"];
       schedules[idx].minute = sched["minute"];
       schedules[idx].relayNum = sched["relayNum"];
       schedules[idx].turnOn = sched["turnOn"];
       schedules[idx].enabled = sched["enabled"];
+      schedules[idx].days = sched["days"].isNull() ? 0x7F : (uint8_t)sched["days"].as<int>(); // Default: ทุกวัน
       idx++;
     }
   }
@@ -1255,7 +1276,7 @@ void setupWebServer() {
     
     // Add schedules
     JsonArray schedArray = doc["schedules"].to<JsonArray>();
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < MAX_SCHEDULES; i++) {
       if (schedules[i].relayNum == 0) continue; // Skip empty slots
       JsonObject sched = schedArray.add<JsonObject>();
       sched["id"] = i;
@@ -1264,6 +1285,7 @@ void setupWebServer() {
       sched["relayNum"] = schedules[i].relayNum;
       sched["turnOn"] = schedules[i].turnOn;
       sched["enabled"] = schedules[i].enabled;
+      sched["days"] = schedules[i].days;
     }
     
     String output;
@@ -1308,14 +1330,20 @@ void setupWebServer() {
       // Update schedules if provided
       JsonArray schedArray = doc["schedules"].as<JsonArray>();
       if (!schedArray.isNull()) {
+        // Reset all schedules before loading new ones
+        for (int i = 0; i < MAX_SCHEDULES; i++) {
+          schedules[i] = {0, 0, 0, false, false, 0x7F};
+        }
         int idx = 0;
         for (JsonObject sched : schedArray) {
-          if (idx >= 10) break;
+          if (idx >= MAX_SCHEDULES) break;
           if (!sched["hour"].isNull()) schedules[idx].hour = sched["hour"].as<int>();
           if (!sched["minute"].isNull()) schedules[idx].minute = sched["minute"].as<int>();
           if (!sched["relayNum"].isNull()) schedules[idx].relayNum = sched["relayNum"].as<int>();
           if (!sched["turnOn"].isNull()) schedules[idx].turnOn = sched["turnOn"].as<bool>();
           if (!sched["enabled"].isNull()) schedules[idx].enabled = sched["enabled"].as<bool>();
+          if (!sched["days"].isNull()) schedules[idx].days = sched["days"].as<int>();
+          else schedules[idx].days = 0x7F;
           idx++;
         }
       }
