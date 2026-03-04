@@ -2,6 +2,7 @@
 #include "DevIsoInput.h"
 #include "DevRelay.h"
 #include "DevSwitch.h"
+#include "DevTempHumidity.h"
 
 // OLED display library
 #include <Wire.h>
@@ -45,6 +46,23 @@ unsigned long lastTempUpdate = 0;
 const unsigned long TEMP_UPDATE_INTERVAL = 2000; // Update every 2 seconds
 float simulatedTemp = 25.0; // Starting simulated temperature
 float tempDelta = 0.5; // Simulated temperature change rate
+
+// XY-MD03 Temperature & Humidity Sensor (Modbus RTU via Serial0/RS485)
+DevTempHumidity xymd03(&Serial, 1); // Serial0 (GPIO1=TX, GPIO3=RX), Slave ID=1
+float xymd03_temperature = 0.0;
+float xymd03_humidity = 0.0;
+bool xymd03_connected = false;
+unsigned long lastXYMD03Update = 0;
+const unsigned long XYMD03_UPDATE_INTERVAL = 3000; // Update every 3 seconds
+// Simulation variables for XY-MD03
+float simTempXY = 26.5;
+float simHumXY = 65.0;
+float simTempDeltaXY = 0.3;
+float simHumDeltaXY = 1.0;
+
+// Display page management
+uint8_t currentPage = 0; // 0=Main page, 1=XY-MD03 page
+const uint8_t MAX_PAGES = 2;
 
 // Pin definitions (from HardwareESP32Config.md)
 const uint8_t PIN_SW1 = 34; // SW1 = Enter/Select (Active Low)
@@ -90,23 +108,29 @@ bool sw1LongPressHandled = false;
 // Forward declarations
 void showWelcome();
 void updateDisplay();
+void updateDisplayPage0(); // Main page
+void updateDisplayPage1(); // XY-MD03 page
 void showCountdown(int seconds);
 void setupWiFi();
 void checkWiFiResetButton();
 void readTemperature();
 void simulateTemperature();
+void readXYMD03();
+void simulateXYMD03();
+void switchPage();
 
 // Callback handlers
 void onSw1Click() {
-  Serial.println("SW1: Enter/Select");
+  // SW1: Switch page
+  switchPage();
 }
 
 void onSw2Click() {
-  Serial.println("SW2: Down");
+  // SW2: Down (reserved for future use)
 }
 
 void onSw3Click() {
-  Serial.println("SW3: Up");
+  // SW3: Up (reserved for future use)
 }
 
 // Relay control helpers
@@ -354,26 +378,85 @@ void readTemperature() {
   if (tempC != DEVICE_DISCONNECTED_C && tempC != 85.0 && tempC > -50.0 && tempC < 125.0) {
     sensorConnected = true;
     currentTemperature = tempC;
-    Serial.print("DS18B20 Temperature: ");
-    Serial.print(currentTemperature, 1);
-    Serial.println(" °C");
   } else {
     sensorConnected = false;
     simulateTemperature();
-    Serial.print("Simulated Temperature: ");
-    Serial.print(currentTemperature, 1);
-    Serial.println(" °C [SENSOR NOT CONNECTED]");
   }
 }
 
-void updateDisplay() {
+// Simulate XY-MD03 values when sensor is not connected
+void simulateXYMD03() {
+  // Simulate temperature fluctuation between 23°C and 30°C
+  simTempXY += simTempDeltaXY;
+  if (simTempXY >= 30.0) {
+    simTempDeltaXY = -0.3;
+    simTempXY = 30.0;
+  } else if (simTempXY <= 23.0) {
+    simTempDeltaXY = 0.3;
+    simTempXY = 23.0;
+  }
+  
+  // Simulate humidity fluctuation between 50% and 80%
+  simHumXY += simHumDeltaXY;
+  if (simHumXY >= 80.0) {
+    simHumDeltaXY = -1.0;
+    simHumXY = 80.0;
+  } else if (simHumXY <= 50.0) {
+    simHumDeltaXY = 1.0;
+    simHumXY = 50.0;
+  }
+  
+  xymd03_temperature = simTempXY;
+  xymd03_humidity = simHumXY;
+}
+
+// Read XY-MD03 Temperature & Humidity Sensor
+void readXYMD03() {
+  bool success = xymd03.update();
+  
+  if (success) {
+    xymd03_connected = true;
+    xymd03_temperature = xymd03.getTemperature();
+    xymd03_humidity = xymd03.getHumidity();
+  } else {
+    xymd03_connected = false;
+    simulateXYMD03();
+  }
+}
+
+// Switch between display pages
+void switchPage() {
+  currentPage++;
+  if (currentPage >= MAX_PAGES) {
+    currentPage = 0;
+  }
+  
+  // Show brief feedback flash
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(30, 24);
+  display.print("PAGE ");
+  display.print(currentPage + 1);
+  display.display();
+  delay(150);
+  
+  // Update display immediately
+  updateDisplay();
+  lastDisplayUpdate = millis(); // Reset display timer
+}
+
+// Main display page (Page 0)
+void updateDisplayPage0() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
   // ========== HEADER ==========
   display.setTextSize(1);
-  display.setCursor(8, 0);
-  display.print("ESP32 SmartFarm");
+  display.setCursor(2, 0);
+  display.print("ESP32 Farm");
+  display.setCursor(108, 0);
+  display.print("1/2"); // Page indicator
 
   // ========== TEMPERATURE DISPLAY ==========
   display.setTextSize(1);
@@ -425,6 +508,67 @@ void updateDisplay() {
   display.display();
 }
 
+// XY-MD03 display page (Page 1)
+void updateDisplayPage1() {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+
+  // ========== HEADER ==========
+  display.setTextSize(1);
+  display.setCursor(2, 0);
+  display.print("XY-MD03");
+  display.setCursor(100, 0);
+  display.print("2/2"); // Page indicator
+
+  // ========== SENSOR STATUS ==========
+  display.setCursor(2, 13);
+  display.print("Status: ");
+  if (xymd03_connected) {
+    display.print("Connected");
+  } else {
+    display.print("SIM Mode");
+  }
+
+  // ========== TEMPERATURE ==========
+  display.setTextSize(1);
+  display.setCursor(2, 26);
+  display.print("Temperature: ");
+  display.print(xymd03_temperature, 1);
+  display.print(" C");
+
+  // ========== HUMIDITY ==========
+  display.setCursor(2, 37);
+  display.print("Humidity:    ");
+  display.print(xymd03_humidity, 1);
+  display.print(" %");
+
+  // ========== INFO ==========
+  display.setCursor(2, 48);
+  display.print("Modbus RS485");
+
+  // ========== INSTRUCTION ==========
+  display.setCursor(2, 56);
+  display.print("SW1=Next Page");
+  
+  display.display();
+}
+
+// Main update display function - route to correct page
+void updateDisplay() {
+  switch (currentPage) {
+    case 0:
+      updateDisplayPage0();
+      break;
+    case 1:
+      updateDisplayPage1();
+      break;
+    default:
+      currentPage = 0;
+      updateDisplayPage0();
+      break;
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(10);
@@ -452,6 +596,16 @@ void setup() {
   
   // Initial temperature reading
   readTemperature();
+
+  // Note: XY-MD03 uses Serial0 (RS485) - ต้องสลับ switch เป็นโหมด RS485
+  // เมื่อใช้ XY-MD03 Serial Monitor จะไม่ทำงาน
+  // Initialize XY-MD03 Temperature & Humidity Sensor (Modbus RTU)
+  // Comment out these lines if not using XY-MD03 or using USB Serial Monitor
+  Serial.end(); // ปิด Serial Monitor mode
+  xymd03.begin(9600); // เริ่มต้น Modbus RTU mode
+  delay(100);
+  // Initial XY-MD03 reading
+  readXYMD03();
 
   // Initialize switches
   sw1.begin();
@@ -489,21 +643,28 @@ void loop() {
   iso1.update();
   iso2.update();
 
-  // Serial control: press keys to toggle relays
-  if (Serial.available()) {
-    char c = (char)Serial.read();
-    switch (c) {
-      case 'f': case 'F': toggleFan(); break;
-      case 'p': case 'P': togglePump(); break;
-      case 'h': case 'H': toggleHeater(); break;
-      case '1': toggleFan(); break;
-      case '2': togglePump(); break;
-      case '3': toggleHeater(); break;
-      default: break;
-    }
-  }
+  // Note: Serial control is disabled when using XY-MD03 (Serial0 used for Modbus)
+  // Serial control: press keys to toggle relays (only works in USB mode)
+  // if (Serial.available()) {
+  //   char c = (char)Serial.read();
+  //   switch (c) {
+  //     case 'f': case 'F': toggleFan(); break;
+  //     case 'p': case 'P': togglePump(); break;
+  //     case 'h': case 'H': toggleHeater(); break;
+  //     case '1': toggleFan(); break;
+  //     case '2': togglePump(); break;
+  //     case '3': toggleHeater(); break;
+  //     default: break;
+  //   }
+  // }
 
   delay(10);
+
+  // Update XY-MD03 reading at interval
+  if (millis() - lastXYMD03Update >= XYMD03_UPDATE_INTERVAL) {
+    lastXYMD03Update = millis();
+    readXYMD03();
+  }
 
   // Update temperature reading at interval
   if (millis() - lastTempUpdate >= TEMP_UPDATE_INTERVAL) {

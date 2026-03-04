@@ -81,6 +81,61 @@ This document outlines the hardware configuration for the ESP32 DevKit V2 microc
 | VCC           | 3.3V     |
 
 
+## XY-MD03 Temperature & Humidity Sensor (Modbus RTU via RS485)
+
+### สรุป
+- เซ็นเซอร์วัดอุณหภูมิและความชื้นแบบดิจิทัล XY-MD03
+- สื่อสารผ่านโปรโตคอล Modbus RTU (RS485)
+- ช่วงการวัดอุณหภูมิ: -40°C ถึง +125°C
+- ช่วงการวัดความชื้น: 0% ถึง 100% RH
+- ความแม่นยำอุณหภูมิ: ±0.5°C
+- ความแม่นยำความชื้น: ±3% RH
+- แรงดัน: 5-30V DC
+- Modbus Slave ID: 1 (default)
+- Baud Rate: 9600 (default)
+
+### การต่อสาย
+| XY-MD03 Pin | ESP32 DevKit V2 | หมายเหตุ |
+|-------------|-----------------|----------|
+| VCC (Brown) | 5V - 24V        | แรงดันจ่าย (ใช้ external power) |
+| GND (Black) | GND             | กราวด์ (ต่อเข้า ESP32 GND) |
+| A+ (Yellow) | RS485 A         | ต่อผ่าน MAX13487 บัส A |
+| B- (Blue)   | RS485 B         | ต่อผ่าน MAX13487 บัส B |
+
+### การเชื่อมต่อ
+```
+XY-MD03 → MAX13487 (RS485) → ESP32 Serial0 (GPIO1=TX, GPIO3=RX)
+```
+
+### Switch Mode (RS232/RS485)
+- **RS485 Mode**: ใช้สำหรับเชื่อมต่อกับ XY-MD03 Sensor
+- **RS232 Mode (USB)**: ใช้สำหรับ Serial Monitor/Debug
+
+⚠️ **คำเตือน**: เมื่อสลับเป็นโหมด RS485 Serial Monitor จะไม่ทำงาน
+
+### Modbus Registers
+| Register | Function | Description | Format |
+|----------|----------|-------------|--------|
+| 0x0001   | Read Input Register (FC04) | Temperature | Value/10 (°C) |
+| 0x0002   | Read Input Register (FC04) | Humidity | Value/10 (%) |
+
+### การทำงานของโค้ด
+- อ่านค่าทุก 3 วินาที
+- หากไม่พบเซ็นเซอร์: แสดงค่า Simulated (Temp: 23-30°C, Humidity: 50-80%)
+- แสดงบน OLED หน้าที่ 2:
+  - Status: `Connected` หรือ `SIM Mode`
+  - Temperature: `T:26.5 C`
+  - Humidity: `H:65.0 %`
+- สลับหน้าจอด้วยปุ่ม SW1
+
+### วิธีการใช้งาน
+1. สลับ Switch เป็นโหมด **RS485**
+2. ต่อสาย XY-MD03 ตามตารางข้างต้น
+3. Upload โค้ดและรีสตาร์ท ESP32
+4. กดปุ่ม SW1 เพื่อสลับไปหน้า XY-MD03
+5. ถ้าต้องการใช้ Serial Monitor: สลับกลับเป็นโหมด **RS232** และ comment โค้ด XY-MD03
+
+
 ## DS18B20 Temperature Sensor (1-Wire)
 
 ### สรุป
