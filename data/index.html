@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Smart Farm Control</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        h1 {
+            color: #667eea;
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        
+        .status-online {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .status-offline {
+            background: #f44336;
+            color: white;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card-title {
+            font-size: 1.3em;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .icon {
+            font-size: 1.5em;
+        }
+        
+        .sensor-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin: 10px 0;
+        }
+        
+        .sensor-unit {
+            font-size: 0.5em;
+            color: #666;
+        }
+        
+        .sensor-label {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .relay-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .relay-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 10px;
+            transition: background 0.3s ease;
+        }
+        
+        .relay-item.active {
+            background: #e8f5e9;
+        }
+        
+        .relay-name {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .toggle-btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            font-size: 0.9em;
+        }
+        
+        .toggle-btn.on {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .toggle-btn.off {
+            background: #ccc;
+            color: #666;
+        }
+        
+        .toggle-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .weather-info {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        
+        .weather-item {
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        
+        .weather-label {
+            font-size: 0.8em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .weather-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .aqi-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .aqi-good { background: #4caf50; }
+        .aqi-fair { background: #8bc34a; }
+        .aqi-moderate { background: #ff9800; }
+        .aqi-poor { background: #f44336; }
+        .aqi-very-poor { background: #9c27b0; }
+        
+        .last-update {
+            text-align: center;
+            color: white;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .updating {
+            animation: pulse 1s infinite;
+        }
+        
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.5em;
+            }
+            
+            .sensor-value {
+                font-size: 2em;
+            }
+            
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌱 ESP32 Smart Farm Control</h1>
+            <p><span id="statusBadge" class="status-badge status-offline">● CONNECTING...</span></p>
+            <p style="margin-top: 10px; color: #666;">IP: <span id="ipAddress">กำลังโหลด...</span></p>
+        </header>
+        
+        <div class="grid">
+            <!-- DS18B20 Temperature -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">🌡️</span>
+                    <span>DS18B20 Temperature</span>
+                </div>
+                <div class="sensor-value">
+                    <span id="ds18b20Temp">--</span>
+                    <span class="sensor-unit">°C</span>
+                </div>
+                <div class="sensor-label">
+                    สถานะ: <span id="ds18b20Status">--</span>
+                </div>
+            </div>
+            
+            <!-- XY-MD03 Temperature & Humidity -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">💧</span>
+                    <span>XY-MD03 Sensor</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div>
+                        <div class="sensor-label">อุณหภูมิ</div>
+                        <div class="sensor-value" style="font-size: 1.8em;">
+                            <span id="xymd03Temp">--</span>
+                            <span class="sensor-unit">°C</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="sensor-label">ความชื้น</div>
+                        <div class="sensor-value" style="font-size: 1.8em;">
+                            <span id="xymd03Hum">--</span>
+                            <span class="sensor-unit">%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="sensor-label" style="margin-top: 10px;">
+                    สถานะ: <span id="xymd03Status">--</span>
+                </div>
+            </div>
+            
+            <!-- Tank Level Sensors -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">🚰</span>
+                    <span>Tank Level Sensors</span>
+                </div>
+                <div style="display: grid; gap: 10px;">
+                    <div class="sensor-item" style="padding: 10px; background: #f5f5f5; border-radius: 8px;">
+                        <div class="sensor-label">Tank 1 (Dry Sensor)</div>
+                        <div class="sensor-value" style="font-size: 1.5em;">
+                            <span id="iso1Status">--</span>
+                        </div>
+                    </div>
+                    <div class="sensor-item" style="padding: 10px; background: #f5f5f5; border-radius: 8px;">
+                        <div class="sensor-label">Tank 2 (Overflow Sensor)</div>
+                        <div class="sensor-value" style="font-size: 1.5em;">
+                            <span id="iso2Status">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Weather Information -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">☁️</span>
+                    <span>Weather - <span id="cityName">--</span></span>
+                </div>
+                <div class="weather-info">
+                    <div class="weather-item">
+                        <div class="weather-label">อุณหภูมิ</div>
+                        <div class="weather-value"><span id="weatherTemp">--</span> °C</div>
+                    </div>
+                    <div class="weather-item">
+                        <div class="weather-label">ความชื้น</div>
+                        <div class="weather-value"><span id="weatherHum">--</span> %</div>
+                    </div>
+                    <div class="weather-item">
+                        <div class="weather-label">รู้สึก</div>
+                        <div class="weather-value"><span id="weatherFeels">--</span> °C</div>
+                    </div>
+                    <div class="weather-item">
+                        <div class="weather-label">ลม</div>
+                        <div class="weather-value"><span id="weatherWind">--</span> m/s</div>
+                    </div>
+                </div>
+                <div style="margin-top: 10px; text-align: center;">
+                    <div class="sensor-label">สภาพอากาศ</div>
+                    <div style="font-size: 1.2em; color: #333; margin-top: 5px;">
+                        <span id="weatherDesc">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Air Quality -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">🌫️</span>
+                    <span>Air Quality</span>
+                </div>
+                <div style="text-align: center; margin: 15px 0;">
+                    <div class="sensor-label">AQI</div>
+                    <div style="margin: 10px 0;">
+                        <span id="aqiBadge" class="aqi-badge aqi-good">กำลังโหลด...</span>
+                    </div>
+                </div>
+                <div class="weather-info">
+                    <div class="weather-item">
+                        <div class="weather-label">PM2.5</div>
+                        <div class="weather-value"><span id="pm25">--</span> μg/m³</div>
+                    </div>
+                    <div class="weather-item">
+                        <div class="weather-label">PM10</div>
+                        <div class="weather-value"><span id="pm10">--</span> μg/m³</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Relay Controls -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">⚡</span>
+                    <span>Relay Controls</span>
+                </div>
+                <div class="relay-controls">
+                    <div class="relay-item" id="relay1Item">
+                        <span class="relay-name">🌀 พัดลม (Fan)</span>
+                        <button class="toggle-btn off" onclick="toggleRelay(1)">
+                            <span id="relay1Btn">OFF</span>
+                        </button>
+                    </div>
+                    <div class="relay-item" id="relay2Item">
+                        <span class="relay-name">💦 ปั๊มน้ำ (Pump)</span>
+                        <button class="toggle-btn off" onclick="toggleRelay(2)">
+                            <span id="relay2Btn">OFF</span>
+                        </button>
+                    </div>
+                    <div class="relay-item" id="relay3Item">
+                        <span class="relay-name">🔥 ฮีตเตอร์ (Heater)</span>
+                        <button class="toggle-btn off" onclick="toggleRelay(3)">
+                            <span id="relay3Btn">OFF</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="last-update">
+            อัพเดทล่าสุด: <span id="lastUpdate">--</span>
+        </div>
+    </div>
+    
+    <script>
+        let updateInterval;
+        let errorCount = 0;
+        const MAX_ERRORS = 5;
+        
+        console.log('ESP32 Smart Farm Dashboard - v2.0');
+        console.log('Using endpoints: /api/sensors, /api/info, /api/relay/{n}/{on|off}');
+        
+        // Fetch all sensor data
+        function updateData() {
+            console.log('Fetching sensor data from /api/sensors...');
+            
+            fetch('/api/sensors')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Sensor data received:', data);
+                    errorCount = 0; // Reset error count on success
+                    
+                    // DS18B20
+                    document.getElementById('ds18b20Temp').textContent = data.ds18b20.temperature.toFixed(1);
+                    document.getElementById('ds18b20Status').textContent = data.ds18b20.connected ? 'เชื่อมต่อแล้ว' : 'โหมดจำลอง';
+                    
+                    // XY-MD03
+                    document.getElementById('xymd03Temp').textContent = data.xymd03.temperature.toFixed(1);
+                    document.getElementById('xymd03Hum').textContent = data.xymd03.humidity.toFixed(1);
+                    document.getElementById('xymd03Status').textContent = data.xymd03.connected ? 'เชื่อมต่อแล้ว' : 'โหมดจำลอง';
+                    
+                    // ISO Inputs
+                    document.getElementById('iso1Status').textContent = data.iso1.active ? '🔴 DRY' : '✅ OK';
+                    document.getElementById('iso2Status').textContent = data.iso2.active ? '🔴 OVERFLOW' : '✅ OK';
+                    
+                    // Weather
+                    if (data.weather && data.weather.available) {
+                        document.getElementById('cityName').textContent = data.weather.city;
+                        document.getElementById('weatherTemp').textContent = data.weather.temperature.toFixed(1);
+                        document.getElementById('weatherHum').textContent = data.weather.humidity.toFixed(0);
+                        document.getElementById('weatherFeels').textContent = data.weather.feelsLike.toFixed(1);
+                        document.getElementById('weatherWind').textContent = data.weather.windSpeed.toFixed(1);
+                        document.getElementById('weatherDesc').textContent = data.weather.description;
+                        
+                        // AQI
+                        const aqiValue = data.weather.aqi;
+                        const aqiNames = ['', 'Good', 'Fair', 'Moderate', 'Poor', 'Very Poor'];
+                        const aqiClasses = ['', 'aqi-good', 'aqi-fair', 'aqi-moderate', 'aqi-poor', 'aqi-very-poor'];
+                        const aqiBadge = document.getElementById('aqiBadge');
+                        aqiBadge.textContent = aqiNames[aqiValue] || 'N/A';
+                        aqiBadge.className = 'aqi-badge ' + (aqiClasses[aqiValue] || 'aqi-good');
+                        
+                        document.getElementById('pm25').textContent = data.weather.pm25.toFixed(1);
+                        document.getElementById('pm10').textContent = data.weather.pm10.toFixed(0);
+                    }
+                    
+                    // Relay Status
+                    if (data.relays) {
+                        updateRelayUI(1, data.relays.fan);
+                        updateRelayUI(2, data.relays.pump);
+                        updateRelayUI(3, data.relays.heater);
+                    }
+                    
+                    // Update timestamp
+                    const now = new Date();
+                    document.getElementById('lastUpdate').textContent = now.toLocaleString('th-TH');
+                    document.getElementById('statusBadge').className = 'status-badge status-online';
+                    document.getElementById('statusBadge').textContent = '● ONLINE';
+                })
+                .catch(error => {
+                    errorCount++;
+                    console.error('Error fetching sensor data:', error);
+                    console.error('Error count:', errorCount);
+                    
+                    document.getElementById('statusBadge').className = 'status-badge status-offline';
+                    document.getElementById('statusBadge').textContent = '● OFFLINE';
+                    
+                    if (errorCount >= MAX_ERRORS) {
+                        console.warn('Too many errors, stopping auto-update. Refresh page to retry.');
+                        clearInterval(updateInterval);
+                    }
+                });
+        }
+        
+        // Update relay UI
+        function updateRelayUI(relayNum, state) {
+            const btn = document.getElementById(`relay${relayNum}Btn`);
+            const item = document.getElementById(`relay${relayNum}Item`);
+            const btnParent = btn.parentElement;
+            
+            if (state) {
+                btn.textContent = 'ON';
+                btnParent.className = 'toggle-btn on';
+                item.classList.add('active');
+            } else {
+                btn.textContent = 'OFF';
+                btnParent.className = 'toggle-btn off';
+                item.classList.remove('active');
+            }
+        }
+        
+        // Toggle relay
+        function toggleRelay(relayNum) {
+            const btn = document.getElementById(`relay${relayNum}Btn`);
+            const currentState = btn.textContent === 'ON';
+            const newState = !currentState;
+            const endpoint = `/api/relay/${relayNum}/${newState ? 'on' : 'off'}`;
+            
+            console.log(`Toggling relay ${relayNum} to ${newState ? 'ON' : 'OFF'} via ${endpoint}`);
+            
+            fetch(endpoint, {
+                method: 'POST'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Relay toggle response:', data);
+                if (data.success) {
+                    updateRelayUI(relayNum, data.state);
+                }
+            })
+            .catch(error => {
+                console.error('Error toggling relay:', error);
+                alert('ไม่สามารถควบคุม Relay ได้ กรุณาลองใหม่');
+            });
+        }
+        
+        // Get IP address
+        console.log('Fetching system info from /api/info...');
+        fetch('/api/info')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('System info received:', data);
+                document.getElementById('ipAddress').textContent = data.ip;
+            })
+            .catch(error => {
+                console.error('Error fetching system info:', error);
+                document.getElementById('ipAddress').textContent = 'ไม่สามารถดึงข้อมูล IP';
+            });
+        
+        // Initial data fetch
+        console.log('Starting initial data fetch...');
+        updateData();
+        
+        // Auto-update every 2 seconds
+        updateInterval = setInterval(updateData, 2000);
+        console.log('Auto-update enabled (every 2 seconds)');
+    </script>
+</body>
+</html>

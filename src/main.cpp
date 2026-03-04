@@ -19,6 +19,13 @@
 // JSON parsing for API responses
 #include <ArduinoJson.h>
 
+// SPIFFS for file system
+#include <SPIFFS.h>
+
+// Async Web Server
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+
 // DS18B20 Temperature Sensor
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -141,6 +148,9 @@ const unsigned long WIFI_RESET_HOLD_TIME = 5000; // 5 seconds
 unsigned long sw1PressStart = 0;
 bool sw1LongPressHandled = false;
 
+// Web Server
+AsyncWebServer server(80);
+
 // Forward declarations
 void showWelcome();
 void updateDisplay();
@@ -158,6 +168,9 @@ void switchPage();
 void fetchWeatherData();
 void fetchAirQualityData();
 String getAQIDescription(int aqi_value);
+void setupWebServer();
+String getSensorDataJSON();
+String getRelayStatusJSON();
 
 // Callback handlers
 void onSw1Click() {
@@ -785,6 +798,184 @@ void updateDisplayPage2() {
   display.display();
 }
 
+// ===== WEB SERVER FUNCTIONS =====
+
+// Get sensor data as JSON
+String getSensorDataJSON() {
+  JsonDocument doc;
+  
+  // DS18B20
+  JsonObject ds18b20 = doc["ds18b20"].to<JsonObject>();
+  ds18b20["temperature"] = currentTemperature;
+  ds18b20["connected"] = sensorConnected;
+  
+  // XY-MD03
+  JsonObject xymd03 = doc["xymd03"].to<JsonObject>();
+  xymd03["temperature"] = xymd03_temperature;
+  xymd03["humidity"] = xymd03_humidity;
+  xymd03["connected"] = xymd03_connected;
+  
+  // ISO Inputs
+  JsonObject iso1Obj = doc["iso1"].to<JsonObject>();
+  iso1Obj["active"] = iso1.isActive();
+  
+  JsonObject iso2Obj = doc["iso2"].to<JsonObject>();
+  iso2Obj["active"] = iso2.isActive();
+  
+  // Weather
+  JsonObject weather = doc["weather"].to<JsonObject>();
+  weather["available"] = weatherDataAvailable;
+  weather["city"] = cityName;
+  weather["temperature"] = weather_temp;
+  weather["humidity"] = weather_humidity;
+  weather["feelsLike"] = weather_feels_like;
+  weather["windSpeed"] = weather_wind_speed;
+  weather["description"] = weather_description;
+  weather["aqi"] = aqi;
+  weather["pm25"] = pm2_5;
+  weather["pm10"] = pm10;
+  
+  // Relays
+  JsonObject relays = doc["relays"].to<JsonObject>();
+  relays["fan"] = relayFan.getState();
+  relays["pump"] = relayPump.getState();
+  relays["heater"] = relayHeater.getState();
+  
+  String output;
+  serializeJson(doc, output);
+  return output;
+}
+
+// Setup Web Server
+void setupWebServer() {
+  // Initialize SPIFFS
+  if (!SPIFFS.begin(true)) {
+    Serial.println("An error occurred while mounting SPIFFS");
+    return;
+  }
+  Serial.println("SPIFFS mounted successfully");
+  
+  // Enable CORS for all API requests
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
+  
+  // Serve index.html from SPIFFS
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(SPIFFS, "/index.html", "text/html");
+  });
+  
+  // API: Get system info
+  server.on("/api/info", HTTP_GET, [](AsyncWebServerRequest *request) {
+    Serial.println("API: /api/info called");
+    JsonDocument doc;
+    doc["ip"] = WiFi.localIP().toString();
+    doc["ssid"] = WiFi.SSID();
+    doc["rssi"] = WiFi.RSSI();
+    doc["uptime"] = millis() / 1000;
+    
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+  });
+  
+  // API: Get all sensor data
+  server.on("/api/sensors", HTTP_GET, [](AsyncWebServerRequest *request) {
+    Serial.println("API: /api/sensors called");
+    String json = getSensorDataJSON();
+    Serial.print("JSON Response: ");
+    Serial.println(json);
+    request->send(200, "application/json", json);
+  });
+  
+  // API: Control Relay 1 (Fan)
+  server.on("/api/relay/1/on", HTTP_POST, [](AsyncWebServerRequest *request) {
+    relayFan.on();
+    JsonDocument doc;
+    doc["success"] = true;
+    doc["relay"] = 1;
+    doc["state"] = true;
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Web: Fan ON");
+  });
+  
+  server.on("/api/relay/1/off", HTTP_POST, [](AsyncWebServerRequest *request) {
+    relayFan.off();
+    JsonDocument doc;
+    doc["success"] = true;
+    doc["relay"] = 1;
+    doc["state"] = false;
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Web: Fan OFF");
+  });
+  
+  // API: Control Relay 2 (Pump)
+  server.on("/api/relay/2/on", HTTP_POST, [](AsyncWebServerRequest *request) {
+    relayPump.on();
+    JsonDocument doc;
+    doc["success"] = true;
+    doc["relay"] = 2;
+    doc["state"] = true;
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Web: Pump ON");
+  });
+  
+  server.on("/api/relay/2/off", HTTP_POST, [](AsyncWebServerRequest *request) {
+    relayPump.off();
+    JsonDocument doc;
+    doc["success"] = true;
+    doc["relay"] = 2;
+    doc["state"] = false;
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Web: Pump OFF");
+  });
+  
+  // API: Control Relay 3 (Heater)
+  server.on("/api/relay/3/on", HTTP_POST, [](AsyncWebServerRequest *request) {
+    relayHeater.on();
+    JsonDocument doc;
+    doc["success"] = true;
+    doc["relay"] = 3;
+    doc["state"] = true;
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Web: Heater ON");
+  });
+  
+  server.on("/api/relay/3/off", HTTP_POST, [](AsyncWebServerRequest *request) {
+    relayHeater.off();
+    JsonDocument doc;
+    doc["success"] = true;
+    doc["relay"] = 3;
+    doc["state"] = false;
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Web: Heater OFF");
+  });
+  
+  // 404 handler
+  server.onNotFound([](AsyncWebServerRequest *request) {
+    request->send(404, "text/plain", "Not Found");
+  });
+  
+  // Start server
+  server.begin();
+  Serial.println("Web Server started!");
+  Serial.print("Open http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("/ in your browser");
+}
+
 // Main update display function - route to correct page
 void updateDisplay() {
   switch (currentPage) {
@@ -871,6 +1062,9 @@ void setup() {
   if (wifiConnected) {
     Serial.println("Fetching initial weather data...");
     fetchWeatherData();
+    
+    // Start Web Server
+    setupWebServer();
   }
 }
 
