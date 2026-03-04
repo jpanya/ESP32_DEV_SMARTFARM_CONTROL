@@ -368,57 +368,59 @@ void readTemperature() {
 
 void updateDisplay() {
   display.clearDisplay();
-  display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // Header
-  display.setCursor(12, 0);
-  display.println("ESP32 Smart Farm");
-  display.drawFastHLine(0, 9, SCREEN_WIDTH, SSD1306_WHITE);
+  // ========== HEADER ==========
+  display.setTextSize(1);
+  display.setCursor(8, 0);
+  display.print("ESP32 SmartFarm");
 
-  // Column headers
-  display.setCursor(0, 13);
-  display.print("SWITCH:");
-  display.setCursor(72, 13);
-  display.print("RELAY:");
-
-  // Left column - Switches (use checkboxes style)
-  display.setCursor(2, 23);
-  display.print("Up  ["); display.print(sw3.isPressed() ? "X" : " "); display.print("]");
-  display.setCursor(2, 33);
-  display.print("Dn  ["); display.print(sw2.isPressed() ? "X" : " "); display.print("]");
-  display.setCursor(2, 43);
-  display.print("Sel ["); display.print(sw1.isPressed() ? "X" : " "); display.print("]");
-
-  // Vertical divider
-  display.drawFastVLine(64, 13, 40, SSD1306_WHITE);
-
-  // Right column - Relays
-  display.setCursor(68, 23);
-  display.print("Fan ["); display.print(relayFan.getState() ? "X" : " "); display.print("]");
-  display.setCursor(68, 33);
-  display.print("Pmp ["); display.print(relayPump.getState() ? "X" : " "); display.print("]");
-  display.setCursor(68, 43);
-  display.print("Htr ["); display.print(relayHeater.getState() ? "X" : " "); display.print("]");
-
-  // Bottom separator
-  display.drawFastHLine(0, 53, SCREEN_WIDTH, SSD1306_WHITE);
-
-  // Bottom status line: Temperature (left) and Tank status (right)
-  display.setCursor(2, 56);
-  display.print("T:");
+  // ========== TEMPERATURE DISPLAY ==========
+  display.setTextSize(1);
+  display.setCursor(2, 13);
+  display.print("Temp: ");
   display.print(currentTemperature, 1);
-  display.print("C");
+  display.print(" C");
+  
+  // Sensor status indicator
   if (!sensorConnected) {
-    display.print("*");  // * = Simulated
+    display.print(" [SIM]");
+  } else {
+    display.print(" [OK]");
   }
   
-  // Tank status (compact format)
-  display.setCursor(68, 56);
-  display.print("T1:");
-  display.print(iso1.isActive() ? "D" : "O");  // D=Dry, O=OK
-  display.print(" T2:");
-  display.print(iso2.isActive() ? "F" : "O");  // F=Full, O=OK
+  // ========== SWITCH STATUS ==========
+  display.setCursor(2, 25);
+  display.print("SW:");
+  display.print("U["); display.print(sw3.isPressed() ? "X" : " "); display.print("]");
+  display.print("D["); display.print(sw2.isPressed() ? "X" : " "); display.print("]");
+  display.print("S["); display.print(sw1.isPressed() ? "X" : " "); display.print("]");
+  
+  // ========== RELAY STATUS ==========
+  display.setCursor(2, 35);
+  display.print("RL:");
+  display.print("F["); display.print(relayFan.getState() ? "X" : " "); display.print("]");
+  display.print("P["); display.print(relayPump.getState() ? "X" : " "); display.print("]");
+  display.print("H["); display.print(relayHeater.getState() ? "X" : " "); display.print("]");
+  
+  // ========== ISO INPUT STATUS ==========
+  display.setCursor(2, 45);
+  display.print("ISO:");
+  display.print("T1[");
+  display.print(iso1.isActive() ? "DRY" : "OK");
+  display.print("] T2[");
+  display.print(iso2.isActive() ? "FUL" : "OK");
+  display.print("]");
+
+  // ========== BOTTOM STATUS BAR (WIFI) ==========
+  if (wifiConnected) {
+    display.setCursor(2, 56);
+    display.print("IP:");
+    display.print(ipAddress);
+  } else {
+    display.setCursor(2, 56);
+    display.print("WiFi: OFF");
+  }
   
   display.display();
 }
