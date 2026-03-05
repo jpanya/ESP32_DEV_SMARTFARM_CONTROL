@@ -590,6 +590,104 @@
             <button class="nav-btn" onclick="refreshMqttStatus()" style="margin-top: 10px; width: 100%;">🔄 Refresh MQTT Status</button>
         </div>
         
+        <!-- Telegram Settings -->
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">📱</span>
+                <span>Telegram Bot Settings</span>
+            </div>
+            
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="telegramEnabled">
+                    <span class="slider"></span>
+                </label>
+                <label for="telegramEnabled" style="margin: 0; color: #333;">เปิดใช้งาน Telegram</label>
+            </div>
+            
+            <div class="form-group">
+                <label>🤖 Bot Token</label>
+                <input type="text" id="telegramBotToken" placeholder="123456:ABC-DEFxxxxxxxxxxxxxxxxxxxxx">
+                <small style="color: #666;">รับจาก @BotFather บน Telegram</small>
+            </div>
+            
+            <div class="form-group">
+                <label>💬 Chat ID</label>
+                <input type="text" id="telegramChatId" placeholder="123456789">
+                <small style="color: #666;">รับจาก @userinfobot บน Telegram</small>
+            </div>
+            
+            <div class="form-group">
+                <label style="margin-bottom: 10px; display: block; font-weight: bold;">🔔 การแจ้งเตือน</label>
+                
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="telegramAlertTempHigh">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="telegramAlertTempHigh" style="margin: 0; color: #555;">แจ้งเตือนอุณหภูมิสูง</label>
+                </div>
+                
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="telegramAlertTempLow">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="telegramAlertTempLow" style="margin: 0; color: #555;">แจ้งเตือนอุณหภูมิต่ำ</label>
+                </div>
+                
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="telegramAlertHumidityHigh">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="telegramAlertHumidityHigh" style="margin: 0; color: #555;">แจ้งเตือนความชื้นสูง</label>
+                </div>
+                
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="telegramAlertHumidityLow">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="telegramAlertHumidityLow" style="margin: 0; color: #555;">แจ้งเตือนความชื้นต่ำ</label>
+                </div>
+                
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="telegramAlertWaterLevel">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="telegramAlertWaterLevel" style="margin: 0; color: #555;">แจ้งเตือนระดับน้ำ</label>
+                </div>
+                
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="telegramAlertRelayStatus">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="telegramAlertRelayStatus" style="margin: 0; color: #555;">แจ้งเตือนสถานะรีเลย์</label>
+                </div>
+                
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="telegramAlertSystemStartup">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="telegramAlertSystemStartup" style="margin: 0; color: #555;">แจ้งเตือนเมื่อระบบเริ่มต้น</label>
+                </div>
+            </div>
+            
+            <div id="telegramStatus" style="margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 8px; display: none;">
+                <strong>Telegram Status:</strong>
+                <div style="margin-top: 5px;">
+                    <span id="telegramConnectionStatus" style="font-weight: bold;"></span>
+                </div>
+            </div>
+            
+            <button class="nav-btn" onclick="testTelegram()" style="margin-top: 10px; width: 100%;">📨 ส่งข้อความทดสอบ</button>
+            <button class="nav-btn" onclick="refreshTelegramStatus()" style="margin-top: 10px; width: 100%;">🔄 Refresh Telegram Status</button>
+        </div>
+        
         <!-- Schedule System -->
         <div class="card">
             <div class="card-title">
@@ -644,6 +742,9 @@
             
             // Load MQTT settings
             loadMqttSettings();
+            
+            // Load Telegram settings
+            loadTelegramSettings();
         }
         
         // Load MQTT settings from API
@@ -723,6 +824,125 @@
                 .catch(error => {
                     console.error('Error loading MQTT status:', error);
                 });
+        }
+        
+        // Load Telegram settings from API
+        function loadTelegramSettings() {
+            fetch('/api/telegram/config')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Telegram settings loaded:', data);
+                    document.getElementById('telegramEnabled').checked = data.enabled || false;
+                    document.getElementById('telegramBotToken').value = data.botToken || '';
+                    document.getElementById('telegramChatId').value = data.chatId || '';
+                    document.getElementById('telegramAlertTempHigh').checked = data.alertTempHigh !== false;
+                    document.getElementById('telegramAlertTempLow').checked = data.alertTempLow !== false;
+                    document.getElementById('telegramAlertHumidityHigh').checked = data.alertHumidityHigh !== false;
+                    document.getElementById('telegramAlertHumidityLow').checked = data.alertHumidityLow !== false;
+                    document.getElementById('telegramAlertWaterLevel').checked = data.alertWaterLevel !== false;
+                    document.getElementById('telegramAlertRelayStatus').checked = data.alertRelayStatus !== false;
+                    document.getElementById('telegramAlertSystemStartup').checked = data.alertSystemStartup !== false;
+                    
+                    // Show Telegram status
+                    refreshTelegramStatus();
+                })
+                .catch(error => {
+                    console.error('Error loading Telegram settings:', error);
+                });
+        }
+        
+        // Refresh Telegram Status
+        function refreshTelegramStatus() {
+            fetch('/api/telegram/status')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Telegram status:', data);
+                    
+                    const statusDiv = document.getElementById('telegramStatus');
+                    const statusSpan = document.getElementById('telegramConnectionStatus');
+                    statusDiv.style.display = 'block';
+                    
+                    if (data.enabled && data.configured) {
+                        statusSpan.textContent = '✅ Configured and Enabled';
+                        statusSpan.style.color = '#4caf50';
+                    } else if (data.enabled && !data.configured) {
+                        statusSpan.textContent = '⚠️ Enabled but not configured (add Bot Token and Chat ID)';
+                        statusSpan.style.color = '#ff9800';
+                    } else {
+                        statusSpan.textContent = '⭕ Disabled';
+                        statusSpan.style.color = '#999';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading Telegram status:', error);
+                });
+        }
+        
+        // Test Telegram - Send test message
+        function testTelegram() {
+            if (!document.getElementById('telegramEnabled').checked) {
+                alert('กรุณาเปิดใช้งาน Telegram ก่อน');
+                return;
+            }
+            
+            if (!document.getElementById('telegramBotToken').value || !document.getElementById('telegramChatId').value) {
+                alert('กรุณากรอก Bot Token และ Chat ID');
+                return;
+            }
+            
+            // Save settings first
+            saveTelegramSettings().then(() => {
+                // Then send test message
+                fetch('/api/telegram/test', {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('✅ ส่งข้อความทดสอบสำเร็จ! ตรวจสอบ Telegram ของคุณ');
+                    } else {
+                        alert('❌ เกิดข้อผิดพลาด: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error sending test message:', error);
+                    alert('❌ ไม่สามารถส่งข้อความได้');
+                });
+            });
+        }
+        
+        // Save Telegram Settings
+        function saveTelegramSettings() {
+            const telegramConfig = {
+                enabled: document.getElementById('telegramEnabled').checked,
+                botToken: document.getElementById('telegramBotToken').value.trim(),
+                chatId: document.getElementById('telegramChatId').value.trim(),
+                alertTempHigh: document.getElementById('telegramAlertTempHigh').checked,
+                alertTempLow: document.getElementById('telegramAlertTempLow').checked,
+                alertHumidityHigh: document.getElementById('telegramAlertHumidityHigh').checked,
+                alertHumidityLow: document.getElementById('telegramAlertHumidityLow').checked,
+                alertWaterLevel: document.getElementById('telegramAlertWaterLevel').checked,
+                alertRelayStatus: document.getElementById('telegramAlertRelayStatus').checked,
+                alertSystemStartup: document.getElementById('telegramAlertSystemStartup').checked
+            };
+            
+            return fetch('/api/telegram/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(telegramConfig)
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Telegram settings saved:', data);
+                refreshTelegramStatus();
+                return data;
+            })
+            .catch(error => {
+                console.error('Error saving Telegram settings:', error);
+                throw error;
+            });
         }
         
         // Render schedules as modern cards
@@ -956,6 +1176,9 @@
                 if (data.success) {
                     // Save MQTT settings
                     saveMqttSettings();
+                    
+                    // Save Telegram settings
+                    saveTelegramSettings();
                     
                     showStatus('✅ บันทึกการตั้งค่าสำเร็จ!', 'success');
                     console.log('Settings saved successfully');

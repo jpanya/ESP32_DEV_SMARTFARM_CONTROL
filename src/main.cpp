@@ -33,6 +33,10 @@
 // MQTT Client
 #include <PubSubClient.h>
 
+// Telegram Bot
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
+
 // OLED display configuration
 #ifndef SCREEN_WIDTH
 #define SCREEN_WIDTH 128
@@ -243,6 +247,54 @@ String mqtt_client_id = ""; // Unique Client ID based on MAC Address
 unsigned long lastMqttPublish = 0;
 const unsigned long MQTT_PUBLISH_INTERVAL = 10000; // Publish sensor data every 10 seconds
 
+// ======================================
+// TELEGRAM CONFIGURATION
+// ======================================
+
+// Telegram Bot Settings
+String telegram_bot_token = "";  // Bot Token from @BotFather
+String telegram_chat_id = "";    // Chat ID (can get from @userinfobot)
+bool telegram_enabled = false;
+
+// Telegram Client
+WiFiClientSecure telegramClient;
+UniversalTelegramBot *bot = nullptr;
+
+// Telegram Alert Settings
+bool telegram_alert_temp_high = true;     // แจ้งเตือนอุณหภูมิสูง
+bool telegram_alert_temp_low = true;      // แจ้งเตือนอุณหภูมิต่ำ
+bool telegram_alert_humidity_high = true; // แจ้งเตือนความชื้นสูง
+bool telegram_alert_humidity_low = true;  // แจ้งเตือนความชื้นต่ำ
+bool telegram_alert_water_level = true;   // แจ้งเตือนระดับน้ำ
+bool telegram_alert_relay_status = true;  // แจ้งเตือนสถานะรีเลย์เปลี่ยน
+bool telegram_alert_system_startup = true;// แจ้งเตือนเมื่อระบบเริ่มต้น
+
+// Telegram Alert Cooldown (to prevent flooding)
+unsigned long lastTempHighAlert = 0;
+unsigned long lastTempLowAlert = 0;
+unsigned long lastHumidityHighAlert = 0;
+unsigned long lastHumidityLowAlert = 0;
+unsigned long lastWaterLevelAlert = 0;
+const unsigned long TELEGRAM_ALERT_COOLDOWN = 300000; // 5 minutes cooldown
+
+// Previous state tracking for relay status alerts
+bool prevFanState = false;
+bool prevPumpState = false;
+bool prevHeaterState = false;
+
+// ======================================
+// STATE PERSISTENCE (บันทึกสถานะอัตโนมัติ)
+// ======================================
+
+// Auto-save timing
+unsigned long lastStateSave = 0;
+const unsigned long STATE_SAVE_INTERVAL = 30000; // บันทึกสถานะทุก 30 วินาที
+bool stateChanged = false; // ตรวจสอบว่ามีการเปลี่ยนแปลงหรือไม่
+
+// Debounce for immediate save on relay change
+unsigned long lastRelayChangeTime = 0;
+const unsigned long RELAY_SAVE_DEBOUNCE = 2000; // รอ 2 วินาทีหลังจากเปลี่ยนสถานะก่อนบันทึก
+
 // Forward declarations
 void showWelcome();
 void updateDisplay();
@@ -272,6 +324,12 @@ void setupWebServer();
 String getSensorDataJSON();
 String getRelayStatusJSON();
 
+// State persistence functions
+void saveStateToSPIFFS();
+void loadStateFromSPIFFS();
+void markStateChanged();
+void checkAndSaveState();
+
 // MQTT functions
 void setupMQTT();
 void reconnectMQTT();
@@ -279,6 +337,16 @@ void mqttCallback(char* topic, byte* payload, unsigned int length);
 void publishSensorData();
 void publishRelayStatus();
 String getMQTTTopicsJSON();
+
+// Telegram functions
+void setupTelegram();
+void sendTelegramMessage(String message);
+void checkTelegramAlerts();
+void sendTelegramSystemInfo();
+void sendTelegramTemperatureAlert(bool isHigh);
+void sendTelegramHumidityAlert(bool isHigh);
+void sendTelegramWaterLevelAlert(String message);
+void sendTelegramRelayStatusAlert(String relayName, bool state);
 
 // Callback handlers
 void onSw1Click() {
@@ -298,16 +366,19 @@ void onSw3Click() {
 void toggleFan() {
   relayFan.toggle();
   Serial.printf("Fan: %s\n", relayFan.getState() ? "ON" : "OFF");
+  markStateChanged(); // บันทึกสถานะเมื่อมีการเปลี่ยนแปลง
 }
 
 void togglePump() {
   relayPump.toggle();
   Serial.printf("Pump: %s\n", relayPump.getState() ? "ON" : "OFF");
+  markStateChanged(); // บันทึกสถานะเมื่อมีการเปลี่ยนแปลง
 }
 
 void toggleHeater() {
   relayHeater.toggle();
   Serial.printf("Heater: %s\n", relayHeater.getState() ? "ON" : "OFF");
+  markStateChanged(); // บันทึกสถานะเมื่อมีการเปลี่ยนแปลง
 }
 
 // ISO callbacks
@@ -917,18 +988,22 @@ void autoTemperatureControl() {
   // Fan Control (ระบายความร้อน)
   if (temp >= TEMP_FAN_ON && !relayFan.getState()) {
     relayFan.on();
+    markStateChanged();
     Serial.printf("AUTO: Fan ON - Temp %.1f°C >= %.1f°C\n", temp, TEMP_FAN_ON);
   } else if (temp <= TEMP_FAN_OFF && relayFan.getState()) {
     relayFan.off();
+    markStateChanged();
     Serial.printf("AUTO: Fan OFF - Temp %.1f°C <= %.1f°C\n", temp, TEMP_FAN_OFF);
   }
   
   // Heater Control (เพิ่มความร้อน)
   if (temp <= TEMP_HEATER_ON && !relayHeater.getState()) {
     relayHeater.on();
+    markStateChanged();
     Serial.printf("AUTO: Heater ON - Temp %.1f°C <= %.1f°C\n", temp, TEMP_HEATER_ON);
   } else if (temp >= TEMP_HEATER_OFF && relayHeater.getState()) {
     relayHeater.off();
+    markStateChanged();
     Serial.printf("AUTO: Heater OFF - Temp %.1f°C >= %.1f°C\n", temp, TEMP_HEATER_OFF);
   }
 }
@@ -944,6 +1019,7 @@ void autoHumidityControl() {
     // ตรวจสอบว่าน้ำไม่แห้งก่อน
     if (!iso1.isActive()) {
       relayPump.on();
+      markStateChanged();
       Serial.printf("AUTO: Pump ON - Humidity %.1f%% < %.1f%%\n", humidity, HUM_MIN);
     } else {
       Serial.println("AUTO: Cannot turn on Pump - Tank is DRY!");
@@ -953,10 +1029,12 @@ void autoHumidityControl() {
   else if (humidity > HUM_MAX) {
     if (!relayFan.getState()) {
       relayFan.on();
+      markStateChanged();
       Serial.printf("AUTO: Fan ON - Humidity %.1f%% > %.1f%%\n", humidity, HUM_MAX);
     }
     if (relayPump.getState()) {
       relayPump.off();
+      markStateChanged();
       Serial.println("AUTO: Pump OFF - Humidity too high");
     }
   }
@@ -964,6 +1042,7 @@ void autoHumidityControl() {
   else if (humidity >= HUM_MIN && humidity <= HUM_MAX) {
     if (relayPump.getState()) {
       relayPump.off();
+      markStateChanged();
       Serial.printf("AUTO: Pump OFF - Humidity normal (%.1f%%)\n", humidity);
     }
   }
@@ -977,12 +1056,14 @@ void autoWaterLevelControl() {
   // ถ้าน้ำแห้ง (ISO1 Active) ปิดปั๊มทันที
   if (iso1.isActive() && relayPump.getState()) {
     relayPump.off();
+    markStateChanged();
     Serial.println("SAFETY: Pump OFF - Tank is DRY!");
   }
   
   // ถ้าน้ำล้น (ISO2 Active) ปิดปั๊มทันที
   if (iso2.isActive() && relayPump.getState()) {
     relayPump.off();
+    markStateChanged();
     Serial.println("SAFETY: Pump OFF - Tank OVERFLOW!");
   }
 }
@@ -1029,10 +1110,12 @@ void checkSchedules() {
       if (relay) {
         if (schedules[i].turnOn) {
           relay->on();
+          markStateChanged();
           Serial.printf("SCHEDULE: %s ON at %02d:%02d\n", 
                        relayName, schedules[i].hour, schedules[i].minute);
         } else {
           relay->off();
+          markStateChanged();
           Serial.printf("SCHEDULE: %s OFF at %02d:%02d\n", 
                        relayName, schedules[i].hour, schedules[i].minute);
         }
@@ -1081,10 +1164,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (topicStr == mqtt_topic_prefix + "/relay/1/set") {
     if (message == "ON" || message == "1") {
       relayFan.on();
+      markStateChanged();
       publishRelayStatus();
       Serial.println("MQTT: Fan turned ON");
     } else if (message == "OFF" || message == "0") {
       relayFan.off();
+      markStateChanged();
       publishRelayStatus();
       Serial.println("MQTT: Fan turned OFF");
     }
@@ -1093,10 +1178,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   else if (topicStr == mqtt_topic_prefix + "/relay/2/set") {
     if (message == "ON" || message == "1") {
       relayPump.on();
+      markStateChanged();
       publishRelayStatus();
       Serial.println("MQTT: Pump turned ON");
     } else if (message == "OFF" || message == "0") {
       relayPump.off();
+      markStateChanged();
       publishRelayStatus();
       Serial.println("MQTT: Pump turned OFF");
     }
@@ -1105,10 +1192,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   else if (topicStr == mqtt_topic_prefix + "/relay/3/set") {
     if (message == "ON" || message == "1") {
       relayHeater.on();
+      markStateChanged();
       publishRelayStatus();
       Serial.println("MQTT: Heater turned ON");
     } else if (message == "OFF" || message == "0") {
       relayHeater.off();
+      markStateChanged();
       publishRelayStatus();
       Serial.println("MQTT: Heater turned OFF");
     }
@@ -1279,6 +1368,236 @@ String getMQTTTopicsJSON() {
   return jsonString;
 }
 
+// ======================================
+// TELEGRAM FUNCTIONS
+// ======================================
+
+// Setup Telegram Bot
+void setupTelegram() {
+  if (!telegram_enabled || telegram_bot_token.length() == 0) {
+    Serial.println("Telegram disabled or no token configured");
+    return;
+  }
+  
+  // Set up secure client for Telegram API
+  telegramClient.setInsecure(); // For simplicity, skip certificate validation
+  
+  // Create bot instance
+  if (bot != nullptr) {
+    delete bot;
+  }
+  bot = new UniversalTelegramBot(telegram_bot_token, telegramClient);
+  
+  Serial.println("Telegram Bot initialized");
+  Serial.printf("Bot Token: %s...%s\n", 
+                telegram_bot_token.substring(0, 10).c_str(),
+                telegram_bot_token.substring(telegram_bot_token.length() - 10).c_str());
+  Serial.printf("Chat ID: %s\n", telegram_chat_id.c_str());
+}
+
+// Send Telegram Message
+void sendTelegramMessage(String message) {
+  if (!telegram_enabled || bot == nullptr || telegram_chat_id.length() == 0) {
+    return;
+  }
+  
+  // Add system prefix
+  String fullMessage = "🌱 *Smart Farm Alert*\n\n" + message;
+  
+  // Send message
+  bool sent = bot->sendMessage(telegram_chat_id, fullMessage, "Markdown");
+  
+  if (sent) {
+    Serial.println("Telegram message sent successfully");
+  } else {
+    Serial.println("Failed to send Telegram message");
+  }
+}
+
+// Send System Info
+void sendTelegramSystemInfo() {
+  String message = "📊 *ข้อมูลระบบ Smart Farm*\n\n";
+  
+  // WiFi Info
+  message += "🌐 *WiFi*\n";
+  message += "• IP: " + ipAddress + "\n";
+  message += "• Signal: " + String(WiFi.RSSI()) + " dBm\n\n";
+  
+  // Temperature Sensors
+  message += "🌡️ *เซ็นเซอร์อุณหภูมิ*\n";
+  message += "• DS18B20: " + String(currentTemperature, 1) + "°C";
+  if (!sensorConnected) message += " (ไม่เชื่อมต่อ)";
+  message += "\n";
+  
+  message += "• XY-MD03: " + String(xymd03_temperature, 1) + "°C";
+  if (!xymd03_connected) message += " (ไม่เชื่อมต่อ)";
+  message += "\n\n";
+  
+  // Humidity
+  message += "💧 *ความชื้น*\n";
+  message += "• XY-MD03: " + String(xymd03_humidity, 1) + "%";
+  if (!xymd03_connected) message += " (ไม่เชื่อมต่อ)";
+  message += "\n\n";
+  
+  // Relay Status
+  message += "⚡ *สถานะรีเลย์*\n";
+  message += "• พัดลม: " + String(relayFan.getState() ? "🟢 เปิด" : "🔴 ปิด") + "\n";
+  message += "• ปั๊มน้ำ: " + String(relayPump.getState() ? "🟢 เปิด" : "🔴 ปิด") + "\n";
+  message += "• ฮีตเตอร์: " + String(relayHeater.getState() ? "🟢 เปิด" : "🔴 ปิด") + "\n\n";
+  
+  // Water Level
+  message += "🚰 *ระดับน้ำ*\n";
+  bool waterDry = iso1.isActive();
+  bool waterOverflow = iso2.isActive();
+  if (waterDry) {
+    message += "• ⚠️ น้ำแห้ง\n";
+  } else if (waterOverflow) {
+    message += "• ⚠️ น้ำล้น\n";
+  } else {
+    message += "• ✅ ปกติ\n";
+  }
+  
+  // Automation Status
+  message += "\n🤖 *ระบบอัตโนมัติ*\n";
+  message += "• ควบคุมอุณหภูมิ: " + String(autoTempEnabled ? "✅ เปิด" : "❌ ปิด") + "\n";
+  message += "• ควบคุมความชื้น: " + String(autoHumEnabled ? "✅ เปิด" : "❌ ปิด") + "\n";
+  message += "• ระบบตั้งเวลา: " + String(scheduleEnabled ? "✅ เปิด" : "❌ ปิด") + "\n";
+  
+  sendTelegramMessage(message);
+}
+
+// Send Temperature Alert
+void sendTelegramTemperatureAlert(bool isHigh) {
+  unsigned long now = millis();
+  
+  if (isHigh) {
+    if (now - lastTempHighAlert < TELEGRAM_ALERT_COOLDOWN) return;
+    lastTempHighAlert = now;
+    
+    String message = "🔥 *แจ้งเตือน: อุณหภูมิสูง!*\n\n";
+    message += "อุณหภูมิปัจจุบัน: *" + String(xymd03_temperature, 1) + "°C*\n";
+    message += "เกินค่าที่กำหนด: " + String(TEMP_FAN_ON, 1) + "°C\n\n";
+    message += "💨 พัดลมกำลัง" + String(relayFan.getState() ? "เปิด" : "ปิด");
+    
+    sendTelegramMessage(message);
+  } else {
+    if (now - lastTempLowAlert < TELEGRAM_ALERT_COOLDOWN) return;
+    lastTempLowAlert = now;
+    
+    String message = "❄️ *แจ้งเตือน: อุณหภูมิต่ำ!*\n\n";
+    message += "อุณหภูมิปัจจุบัน: *" + String(xymd03_temperature, 1) + "°C*\n";
+    message += "ต่ำกว่าค่าที่กำหนด: " + String(TEMP_HEATER_ON, 1) + "°C\n\n";
+    message += "🔥 ฮีตเตอร์กำลัง" + String(relayHeater.getState() ? "เปิด" : "ปิด");
+    
+    sendTelegramMessage(message);
+  }
+}
+
+// Send Humidity Alert
+void sendTelegramHumidityAlert(bool isHigh) {
+  unsigned long now = millis();
+  
+  if (isHigh) {
+    if (now - lastHumidityHighAlert < TELEGRAM_ALERT_COOLDOWN) return;
+    lastHumidityHighAlert = now;
+    
+    String message = "💧 *แจ้งเตือน: ความชื้นสูง!*\n\n";
+    message += "ความชื้นปัจจุบัน: *" + String(xymd03_humidity, 1) + "%*\n";
+    message += "เกินค่าที่กำหนด: " + String(HUM_MAX, 1) + "%\n\n";
+    message += "💨 พัดลมกำลัง" + String(relayFan.getState() ? "เปิด" : "ปิด");
+    
+    sendTelegramMessage(message);
+  } else {
+    if (now - lastHumidityLowAlert < TELEGRAM_ALERT_COOLDOWN) return;
+    lastHumidityLowAlert = now;
+    
+    String message = "🏜️ *แจ้งเตือน: ความชื้นต่ำ!*\n\n";
+    message += "ความชื้นปัจจุบัน: *" + String(xymd03_humidity, 1) + "%*\n";
+    message += "ต่ำกว่าค่าที่กำหนด: " + String(HUM_MIN, 1) + "%\n\n";
+    message += "💦 ปั๊มน้ำกำลัง" + String(relayPump.getState() ? "เปิด" : "ปิด");
+    
+    sendTelegramMessage(message);
+  }
+}
+
+// Send Water Level Alert
+void sendTelegramWaterLevelAlert(String alertMessage) {
+  unsigned long now = millis();
+  if (now - lastWaterLevelAlert < TELEGRAM_ALERT_COOLDOWN) return;
+  lastWaterLevelAlert = now;
+  
+  String message = "🚰 *แจ้งเตือน: ระดับน้ำ!*\n\n";
+  message += alertMessage;
+  
+  sendTelegramMessage(message);
+}
+
+// Send Relay Status Change Alert
+void sendTelegramRelayStatusAlert(String relayName, bool state) {
+  String emoji = state ? "🟢" : "🔴";
+  String status = state ? "เปิด" : "ปิด";
+  
+  String message = emoji + " *" + relayName + "* ถูก*" + status + "*\n\n";
+  message += "เวลา: " + String(millis() / 1000) + " วินาที";
+  
+  sendTelegramMessage(message);
+}
+
+// Check and Send Telegram Alerts
+void checkTelegramAlerts() {
+  if (!telegram_enabled || bot == nullptr) {
+    return;
+  }
+  
+  // Check temperature alerts
+  if (telegram_alert_temp_high && xymd03_connected && xymd03_temperature > TEMP_FAN_ON) {
+    sendTelegramTemperatureAlert(true);
+  }
+  if (telegram_alert_temp_low && xymd03_connected && xymd03_temperature < TEMP_HEATER_ON) {
+    sendTelegramTemperatureAlert(false);
+  }
+  
+  // Check humidity alerts
+  if (telegram_alert_humidity_high && xymd03_connected && xymd03_humidity > HUM_MAX) {
+    sendTelegramHumidityAlert(true);
+  }
+  if (telegram_alert_humidity_low && xymd03_connected && xymd03_humidity < HUM_MIN) {
+    sendTelegramHumidityAlert(false);
+  }
+  
+  // Check water level alerts
+  if (telegram_alert_water_level) {
+    bool waterDry = iso1.isActive();
+    bool waterOverflow = iso2.isActive();
+    
+    if (waterDry) {
+      sendTelegramWaterLevelAlert("⚠️ *แท้งค์น้ำแห้ง!*\nกรุณาเติมน้ำ");
+    } else if (waterOverflow) {
+      sendTelegramWaterLevelAlert("⚠️ *น้ำล้น!*\nกรุณาตรวจสอบระบบ");
+    }
+  }
+  
+  // Check relay status changes
+  if (telegram_alert_relay_status) {
+    bool currentFanState = relayFan.getState();
+    bool currentPumpState = relayPump.getState();
+    bool currentHeaterState = relayHeater.getState();
+    
+    if (currentFanState != prevFanState) {
+      sendTelegramRelayStatusAlert("พัดลม", currentFanState);
+      prevFanState = currentFanState;
+    }
+    if (currentPumpState != prevPumpState) {
+      sendTelegramRelayStatusAlert("ปั๊มน้ำ", currentPumpState);
+      prevPumpState = currentPumpState;
+    }
+    if (currentHeaterState != prevHeaterState) {
+      sendTelegramRelayStatusAlert("ฮีตเตอร์", currentHeaterState);
+      prevHeaterState = currentHeaterState;
+    }
+  }
+}
+
 // Save config to SPIFFS
 void saveConfigToSPIFFS() {
   File file = SPIFFS.open("/config.json", "w");
@@ -1306,6 +1625,23 @@ void saveConfigToSPIFFS() {
   doc["mqttUsername"] = mqtt_username;
   doc["mqttPassword"] = mqtt_password;
   doc["mqttTopicPrefix"] = mqtt_topic_prefix;
+  
+  // Save Telegram settings
+  doc["telegramEnabled"] = telegram_enabled;
+  doc["telegramBotToken"] = telegram_bot_token;
+  doc["telegramChatId"] = telegram_chat_id;
+  doc["telegramAlertTempHigh"] = telegram_alert_temp_high;
+  doc["telegramAlertTempLow"] = telegram_alert_temp_low;
+  doc["telegramAlertHumidityHigh"] = telegram_alert_humidity_high;
+  doc["telegramAlertHumidityLow"] = telegram_alert_humidity_low;
+  doc["telegramAlertWaterLevel"] = telegram_alert_water_level;
+  doc["telegramAlertRelayStatus"] = telegram_alert_relay_status;
+  doc["telegramAlertSystemStartup"] = telegram_alert_system_startup;
+  
+  // Save relay states (สถานะรีเลย์ล่าสุดก่อนไฟดับ/รีเซต)
+  doc["relayFanState"] = relayFan.getState();
+  doc["relayPumpState"] = relayPump.getState();
+  doc["relayHeaterState"] = relayHeater.getState();
   
   // Save schedules
   JsonArray schedArray = doc["schedules"].to<JsonArray>();
@@ -1360,6 +1696,53 @@ void loadConfigFromSPIFFS() {
   mqtt_password = doc["mqttPassword"] | mqtt_password;
   mqtt_topic_prefix = doc["mqttTopicPrefix"] | mqtt_topic_prefix;
   
+  // Load Telegram settings
+  telegram_enabled = doc["telegramEnabled"] | telegram_enabled;
+  telegram_bot_token = doc["telegramBotToken"] | telegram_bot_token;
+  telegram_chat_id = doc["telegramChatId"] | telegram_chat_id;
+  telegram_alert_temp_high = doc["telegramAlertTempHigh"] | telegram_alert_temp_high;
+  telegram_alert_temp_low = doc["telegramAlertTempLow"] | telegram_alert_temp_low;
+  telegram_alert_humidity_high = doc["telegramAlertHumidityHigh"] | telegram_alert_humidity_high;
+  telegram_alert_humidity_low = doc["telegramAlertHumidityLow"] | telegram_alert_humidity_low;
+  telegram_alert_water_level = doc["telegramAlertWaterLevel"] | telegram_alert_water_level;
+  telegram_alert_relay_status = doc["telegramAlertRelayStatus"] | telegram_alert_relay_status;
+  telegram_alert_system_startup = doc["telegramAlertSystemStartup"] | telegram_alert_system_startup;
+  
+  // Load and restore relay states (คืนค่าสถานะรีเลย์ที่บันทึกไว้)
+  bool savedFanState = doc["relayFanState"] | false;
+  bool savedPumpState = doc["relayPumpState"] | false;
+  bool savedHeaterState = doc["relayHeaterState"] | false;
+  
+  // Restore relay states
+  if (savedFanState) {
+    relayFan.on();
+    Serial.println("Restored Fan state: ON");
+  } else {
+    relayFan.off();
+    Serial.println("Restored Fan state: OFF");
+  }
+  
+  if (savedPumpState) {
+    relayPump.on();
+    Serial.println("Restored Pump state: ON");
+  } else {
+    relayPump.off();
+    Serial.println("Restored Pump state: OFF");
+  }
+  
+  if (savedHeaterState) {
+    relayHeater.on();
+    Serial.println("Restored Heater state: ON");
+  } else {
+    relayHeater.off();
+    Serial.println("Restored Heater state: OFF");
+  }
+  
+  // Update previous state tracking for alerts
+  prevFanState = savedFanState;
+  prevPumpState = savedPumpState;
+  prevHeaterState = savedHeaterState;
+  
   // Load schedules
   JsonArray schedArray = doc["schedules"];
   if (schedArray) {
@@ -1377,6 +1760,138 @@ void loadConfigFromSPIFFS() {
   }
   
   Serial.println("Config loaded from SPIFFS");
+}
+
+// ======================================
+// STATE PERSISTENCE FUNCTIONS (บันทึก/โหลดสถานะอัตโนมัติ)
+// ======================================
+
+// Save current runtime state to SPIFFS (เร็วกว่า saveConfigToSPIFFS)
+void saveStateToSPIFFS() {
+  File file = SPIFFS.open("/state.json", "w");
+  if (!file) {
+    Serial.println("Failed to open state file for writing");
+    return;
+  }
+  
+  JsonDocument doc;
+  
+  // Save relay states
+  doc["fanState"] = relayFan.getState();
+  doc["pumpState"] = relayPump.getState();
+  doc["heaterState"] = relayHeater.getState();
+  
+  // Save automation states
+  doc["autoTempEnabled"] = autoTempEnabled;
+  doc["autoHumEnabled"] = autoHumEnabled;
+  doc["scheduleEnabled"] = scheduleEnabled;
+  
+  // Save last sensor readings (for display before new reading)
+  doc["lastTemp"] = currentTemperature;
+  doc["lastXYTemp"] = xymd03_temperature;
+  doc["lastXYHum"] = xymd03_humidity;
+  
+  // Save timestamp
+  doc["timestamp"] = millis();
+  
+  serializeJson(doc, file);
+  file.close();
+  
+  Serial.println("✓ State saved to SPIFFS");
+  stateChanged = false; // Reset change flag
+}
+
+// Load runtime state from SPIFFS
+void loadStateFromSPIFFS() {
+  File file = SPIFFS.open("/state.json", "r");
+  if (!file) {
+    Serial.println("No state file found, using defaults");
+    return;
+  }
+  
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  
+  if (error) {
+    Serial.println("Failed to parse state file");
+    return;
+  }
+  
+  // Restore relay states
+  bool fanState = doc["fanState"] | false;
+  bool pumpState = doc["pumpState"] | false;
+  bool heaterState = doc["heaterState"] | false;
+  
+  if (fanState) {
+    relayFan.on();
+    Serial.println("↻ Restored Fan: ON");
+  } else {
+    relayFan.off();
+    Serial.println("↻ Restored Fan: OFF");
+  }
+  
+  if (pumpState) {
+    relayPump.on();
+    Serial.println("↻ Restored Pump: ON");
+  } else {
+    relayPump.off();
+    Serial.println("↻ Restored Pump: OFF");
+  }
+  
+  if (heaterState) {
+    relayHeater.on();
+    Serial.println("↻ Restored Heater: ON");
+  } else {
+    relayHeater.off();
+    Serial.println("↻ Restored Heater: OFF");
+  }
+  
+  // Restore automation states
+  autoTempEnabled = doc["autoTempEnabled"] | autoTempEnabled;
+  autoHumEnabled = doc["autoHumEnabled"] | autoHumEnabled;
+  scheduleEnabled = doc["scheduleEnabled"] | scheduleEnabled;
+  
+  // Restore last sensor readings (optional - will be updated soon)
+  currentTemperature = doc["lastTemp"] | currentTemperature;
+  xymd03_temperature = doc["lastXYTemp"] | xymd03_temperature;
+  xymd03_humidity = doc["lastXYHum"] | xymd03_humidity;
+  
+  // Update previous state tracking
+  prevFanState = fanState;
+  prevPumpState = pumpState;
+  prevHeaterState = heaterState;
+  
+  unsigned long savedTime = doc["timestamp"] | 0;
+  Serial.printf("✓ State loaded from SPIFFS (saved at: %lu ms)\n", savedTime);
+}
+
+// Mark that state has changed (เรียกเมื่อมีการเปลี่ยนแปลง)
+void markStateChanged() {
+  stateChanged = true;
+  lastRelayChangeTime = millis();
+}
+
+// Check and save state if changed (เรียกใน loop)
+void checkAndSaveState() {
+  unsigned long now = millis();
+  
+  // Immediate save after relay change (with debounce)
+  if (stateChanged && (now - lastRelayChangeTime >= RELAY_SAVE_DEBOUNCE)) {
+    saveStateToSPIFFS();
+    // Also update main config to keep it in sync
+    saveConfigToSPIFFS();
+    return;
+  }
+  
+  // Periodic save (backup)
+  if (now - lastStateSave >= STATE_SAVE_INTERVAL) {
+    lastStateSave = now;
+    if (stateChanged) {
+      saveStateToSPIFFS();
+      saveConfigToSPIFFS();
+    }
+  }
 }
 
 // ===== WEB SERVER FUNCTIONS =====
@@ -1477,6 +1992,7 @@ void setupWebServer() {
   // API: Control Relay 1 (Fan)
   server.on("/api/relay/1/on", HTTP_POST, [](AsyncWebServerRequest *request) {
     relayFan.on();
+    markStateChanged();
     JsonDocument doc;
     doc["success"] = true;
     doc["relay"] = 1;
@@ -1489,6 +2005,7 @@ void setupWebServer() {
   
   server.on("/api/relay/1/off", HTTP_POST, [](AsyncWebServerRequest *request) {
     relayFan.off();
+    markStateChanged();
     JsonDocument doc;
     doc["success"] = true;
     doc["relay"] = 1;
@@ -1502,6 +2019,7 @@ void setupWebServer() {
   // API: Control Relay 2 (Pump)
   server.on("/api/relay/2/on", HTTP_POST, [](AsyncWebServerRequest *request) {
     relayPump.on();
+    markStateChanged();
     JsonDocument doc;
     doc["success"] = true;
     doc["relay"] = 2;
@@ -1514,6 +2032,7 @@ void setupWebServer() {
   
   server.on("/api/relay/2/off", HTTP_POST, [](AsyncWebServerRequest *request) {
     relayPump.off();
+    markStateChanged();
     JsonDocument doc;
     doc["success"] = true;
     doc["relay"] = 2;
@@ -1527,6 +2046,7 @@ void setupWebServer() {
   // API: Control Relay 3 (Heater)
   server.on("/api/relay/3/on", HTTP_POST, [](AsyncWebServerRequest *request) {
     relayHeater.on();
+    markStateChanged();
     JsonDocument doc;
     doc["success"] = true;
     doc["relay"] = 3;
@@ -1539,6 +2059,7 @@ void setupWebServer() {
   
   server.on("/api/relay/3/off", HTTP_POST, [](AsyncWebServerRequest *request) {
     relayHeater.off();
+    markStateChanged();
     JsonDocument doc;
     doc["success"] = true;
     doc["relay"] = 3;
@@ -1742,6 +2263,86 @@ void setupWebServer() {
     request->send(200, "application/json", output);
   });
   
+  // ===== TELEGRAM API ENDPOINTS =====
+  
+  // Get Telegram configuration
+  server.on("/api/telegram/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["enabled"] = telegram_enabled;
+    doc["botToken"] = telegram_bot_token;
+    doc["chatId"] = telegram_chat_id;
+    doc["alertTempHigh"] = telegram_alert_temp_high;
+    doc["alertTempLow"] = telegram_alert_temp_low;
+    doc["alertHumidityHigh"] = telegram_alert_humidity_high;
+    doc["alertHumidityLow"] = telegram_alert_humidity_low;
+    doc["alertWaterLevel"] = telegram_alert_water_level;
+    doc["alertRelayStatus"] = telegram_alert_relay_status;
+    doc["alertSystemStartup"] = telegram_alert_system_startup;
+    
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+  });
+  
+  // Update Telegram configuration
+  server.on("/api/telegram/config", HTTP_POST, 
+    [](AsyncWebServerRequest *request) {}, 
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, data, len);
+      
+      if (error) {
+        request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
+        return;
+      }
+      
+      // Update Telegram settings
+      if (doc.containsKey("enabled")) telegram_enabled = doc["enabled"];
+      if (doc.containsKey("botToken")) telegram_bot_token = doc["botToken"].as<String>();
+      if (doc.containsKey("chatId")) telegram_chat_id = doc["chatId"].as<String>();
+      if (doc.containsKey("alertTempHigh")) telegram_alert_temp_high = doc["alertTempHigh"];
+      if (doc.containsKey("alertTempLow")) telegram_alert_temp_low = doc["alertTempLow"];
+      if (doc.containsKey("alertHumidityHigh")) telegram_alert_humidity_high = doc["alertHumidityHigh"];
+      if (doc.containsKey("alertHumidityLow")) telegram_alert_humidity_low = doc["alertHumidityLow"];
+      if (doc.containsKey("alertWaterLevel")) telegram_alert_water_level = doc["alertWaterLevel"];
+      if (doc.containsKey("alertRelayStatus")) telegram_alert_relay_status = doc["alertRelayStatus"];
+      if (doc.containsKey("alertSystemStartup")) telegram_alert_system_startup = doc["alertSystemStartup"];
+      
+      // Save to SPIFFS
+      saveConfigToSPIFFS();
+      
+      // Reinitialize Telegram
+      setupTelegram();
+      
+      request->send(200, "application/json", "{\"success\":true,\"message\":\"Telegram config updated\"}");
+      Serial.println("Telegram configuration updated via API");
+    });
+  
+  // Send test message
+  server.on("/api/telegram/test", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!telegram_enabled) {
+      request->send(400, "application/json", "{\"success\":false,\"message\":\"Telegram is disabled\"}");
+      return;
+    }
+    
+    sendTelegramSystemInfo();
+    request->send(200, "application/json", "{\"success\":true,\"message\":\"Test message sent\"}");
+  });
+  
+  // Get Telegram status
+  server.on("/api/telegram/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["enabled"] = telegram_enabled;
+    doc["configured"] = (telegram_bot_token.length() > 0 && telegram_chat_id.length() > 0);
+    doc["botToken"] = telegram_bot_token.length() > 0 ? "***" + telegram_bot_token.substring(telegram_bot_token.length() - 10) : "";
+    doc["chatId"] = telegram_chat_id;
+    
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+  });
+  
   // 404 handler
   server.onNotFound([](AsyncWebServerRequest *request) {
     request->send(404, "text/plain", "Not Found");
@@ -1852,10 +2453,27 @@ void setup() {
     loadConfigFromSPIFFS();
     Serial.println("Automation system initialized");
     
+    // Load runtime state from SPIFFS (restore relay states after power loss)
+    loadStateFromSPIFFS();
+    Serial.println("✓ Runtime state restored");
+    
     // Setup MQTT
     setupMQTT();
     if (mqtt_enabled) {
       reconnectMQTT();
+    }
+    
+    // Setup Telegram
+    setupTelegram();
+    
+    // Send startup notification after a delay (to ensure everything is initialized)
+    if (telegram_enabled && telegram_alert_system_startup) {
+      delay(2000); // Wait 2 seconds
+      String message = "🚀 *ระบบ Smart Farm เริ่มทำงาน*\n\n";
+      message += "✅ ระบบพร้อมใช้งาน\n";
+      message += "📍 IP: " + ipAddress + "\n";
+      message += "🌐 WiFi Signal: " + String(WiFi.RSSI()) + " dBm";
+      sendTelegramMessage(message);
     }
     
     fetchWeatherData();
@@ -1956,5 +2574,15 @@ void loop() {
       }
     }
   }
+  
+  // ===== TELEGRAM HANDLING =====
+  // Check and send Telegram alerts
+  if (telegram_enabled && wifiConnected) {
+    checkTelegramAlerts();
+  }
+  
+  // ===== STATE PERSISTENCE =====
+  // Auto-save state when changed (with debounce)
+  checkAndSaveState();
 }
 
