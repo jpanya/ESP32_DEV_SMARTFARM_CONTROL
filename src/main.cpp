@@ -30,6 +30,9 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
+// MQTT Client
+#include <PubSubClient.h>
+
 // OLED display configuration
 #ifndef SCREEN_WIDTH
 #define SCREEN_WIDTH 128
@@ -214,6 +217,32 @@ bool sw1LongPressHandled = false;
 // Web Server
 AsyncWebServer server(80);
 
+// ======================================
+// MQTT CONFIGURATION
+// ======================================
+
+// MQTT Settings (HiveMQ Public Broker)
+String mqtt_server = "broker.hivemq.com";
+int mqtt_port = 1883;
+String mqtt_username = "";  // Optional: for secured HiveMQ Cloud
+String mqtt_password = "";  // Optional: for secured HiveMQ Cloud
+String mqtt_topic_prefix = "smartfarm/device01"; // Unique prefix for each device
+bool mqtt_enabled = false;
+
+// MQTT Client
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+
+// MQTT Connection Status
+bool mqttConnected = false;
+unsigned long lastMqttReconnectAttempt = 0;
+const unsigned long MQTT_RECONNECT_INTERVAL = 5000; // Try reconnect every 5 seconds
+String mqtt_client_id = ""; // Unique Client ID based on MAC Address
+
+// MQTT Publish Intervals
+unsigned long lastMqttPublish = 0;
+const unsigned long MQTT_PUBLISH_INTERVAL = 10000; // Publish sensor data every 10 seconds
+
 // Forward declarations
 void showWelcome();
 void updateDisplay();
@@ -242,6 +271,14 @@ void loadConfigFromSPIFFS();
 void setupWebServer();
 String getSensorDataJSON();
 String getRelayStatusJSON();
+
+// MQTT functions
+void setupMQTT();
+void reconnectMQTT();
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+void publishSensorData();
+void publishRelayStatus();
+String getMQTTTopicsJSON();
 
 // Callback handlers
 void onSw1Click() {
@@ -1004,6 +1041,244 @@ void checkSchedules() {
   }
 }
 
+// ======================================
+// MQTT FUNCTIONS
+// ======================================
+
+// Setup MQTT Connection
+void setupMQTT() {
+  mqttClient.setServer(mqtt_server.c_str(), mqtt_port);
+  mqttClient.setCallback(mqttCallback);
+  
+  // Generate unique Client ID based on MAC Address
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  mqtt_client_id = "ESP32Farm-";
+  mqtt_client_id += String(mac[3], HEX);
+  mqtt_client_id += String(mac[4], HEX);
+  mqtt_client_id += String(mac[5], HEX);
+  mqtt_client_id.toUpperCase();
+  
+  Serial.println("MQTT client initialized");
+  Serial.printf("MQTT Server: %s:%d\n", mqtt_server.c_str(), mqtt_port);
+  Serial.printf("MQTT Client ID: %s\n", mqtt_client_id.c_str());
+  Serial.printf("Topic Prefix: %s\n", mqtt_topic_prefix.c_str());
+}
+
+// MQTT Callback for Subscribed Topics
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  String message = "";
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+  
+  Serial.printf("MQTT Message received [%s]: %s\n", topic, message.c_str());
+  
+  // Parse topic and handle commands
+  String topicStr = String(topic);
+  
+  // Control Relay 1 (Fan)
+  if (topicStr == mqtt_topic_prefix + "/relay/1/set") {
+    if (message == "ON" || message == "1") {
+      relayFan.on();
+      publishRelayStatus();
+      Serial.println("MQTT: Fan turned ON");
+    } else if (message == "OFF" || message == "0") {
+      relayFan.off();
+      publishRelayStatus();
+      Serial.println("MQTT: Fan turned OFF");
+    }
+  }
+  // Control Relay 2 (Pump)
+  else if (topicStr == mqtt_topic_prefix + "/relay/2/set") {
+    if (message == "ON" || message == "1") {
+      relayPump.on();
+      publishRelayStatus();
+      Serial.println("MQTT: Pump turned ON");
+    } else if (message == "OFF" || message == "0") {
+      relayPump.off();
+      publishRelayStatus();
+      Serial.println("MQTT: Pump turned OFF");
+    }
+  }
+  // Control Relay 3 (Heater)
+  else if (topicStr == mqtt_topic_prefix + "/relay/3/set") {
+    if (message == "ON" || message == "1") {
+      relayHeater.on();
+      publishRelayStatus();
+      Serial.println("MQTT: Heater turned ON");
+    } else if (message == "OFF" || message == "0") {
+      relayHeater.off();
+      publishRelayStatus();
+      Serial.println("MQTT: Heater turned OFF");
+    }
+  }
+}
+
+// Reconnect to MQTT Broker
+void reconnectMQTT() {
+  if (!mqtt_enabled || !wifiConnected) {
+    mqttConnected = false;
+    return;
+  }
+  
+  if (mqttClient.connected()) {
+    mqttConnected = true;
+    return;
+  }
+  
+  unsigned long now = millis();
+  if (now - lastMqttReconnectAttempt < MQTT_RECONNECT_INTERVAL) {
+    return;
+  }
+  
+  lastMqttReconnectAttempt = now;
+  
+  Serial.print("Attempting MQTT connection...");
+  Serial.printf(" (Client ID: %s)\n", mqtt_client_id.c_str());
+  
+  // Attempt to connect using the unique Client ID
+  bool connected = false;
+  if (mqtt_username.length() > 0) {
+    connected = mqttClient.connect(mqtt_client_id.c_str(), mqtt_username.c_str(), mqtt_password.c_str());
+  } else {
+    connected = mqttClient.connect(mqtt_client_id.c_str());
+  }
+  
+  if (connected) {
+    Serial.println("connected");
+    mqttConnected = true;
+    
+    // Subscribe to control topics
+    String topic1 = mqtt_topic_prefix + "/relay/1/set";
+    String topic2 = mqtt_topic_prefix + "/relay/2/set";
+    String topic3 = mqtt_topic_prefix + "/relay/3/set";
+    
+    mqttClient.subscribe(topic1.c_str());
+    mqttClient.subscribe(topic2.c_str());
+    mqttClient.subscribe(topic3.c_str());
+    
+    Serial.printf("Subscribed to: %s, %s, %s\n", topic1.c_str(), topic2.c_str(), topic3.c_str());
+    
+    // Publish initial status
+    publishSensorData();
+    publishRelayStatus();
+  } else {
+    Serial.print("failed, rc=");
+    Serial.print(mqttClient.state());
+    Serial.println(" will try again later");
+    mqttConnected = false;
+  }
+}
+
+// Publish Sensor Data to MQTT
+void publishSensorData() {
+  if (!mqttConnected || !mqttClient.connected()) {
+    return;
+  }
+  
+  // Publish DS18B20 Temperature to separate topic
+  JsonDocument ds18b20Doc;
+  ds18b20Doc["temperature"] = currentTemperature;
+  ds18b20Doc["connected"] = sensorConnected;
+  ds18b20Doc["unit"] = "celsius";
+  
+  String ds18b20Json;
+  serializeJson(ds18b20Doc, ds18b20Json);
+  String ds18b20Topic = mqtt_topic_prefix + "/ds18b20";
+  mqttClient.publish(ds18b20Topic.c_str(), ds18b20Json.c_str());
+  Serial.printf("MQTT Published DS18B20 to %s\n", ds18b20Topic.c_str());
+  
+  // Publish XY-MD03 Temperature & Humidity to separate topic
+  JsonDocument xymd03Doc;
+  xymd03Doc["temperature"] = xymd03_temperature;
+  xymd03Doc["humidity"] = xymd03_humidity;
+  xymd03Doc["connected"] = xymd03_connected;
+  xymd03Doc["temp_unit"] = "celsius";
+  xymd03Doc["humidity_unit"] = "percent";
+  
+  String xymd03Json;
+  serializeJson(xymd03Doc, xymd03Json);
+  String xymd03Topic = mqtt_topic_prefix + "/xymd03";
+  mqttClient.publish(xymd03Topic.c_str(), xymd03Json.c_str());
+  Serial.printf("MQTT Published XY-MD03 to %s\n", xymd03Topic.c_str());
+  
+  // Publish all sensors combined (backward compatibility)
+  JsonDocument doc;
+  
+  // DS18B20 Temperature
+  doc["ds18b20"]["temperature"] = currentTemperature;
+  doc["ds18b20"]["connected"] = sensorConnected;
+  
+  // XY-MD03 Temperature & Humidity
+  doc["xymd03"]["temperature"] = xymd03_temperature;
+  doc["xymd03"]["humidity"] = xymd03_humidity;
+  doc["xymd03"]["connected"] = xymd03_connected;
+  
+  // Weather Data
+  doc["weather"]["temperature"] = weather_temp;
+  doc["weather"]["humidity"] = weather_humidity;
+  doc["weather"]["description"] = weather_description;
+  
+  // Isolated Inputs
+  doc["iso1"] = iso1.isActive();
+  doc["iso2"] = iso2.isActive();
+  
+  String jsonString;
+  serializeJson(doc, jsonString);
+  
+  String topic = mqtt_topic_prefix + "/sensors";
+  mqttClient.publish(topic.c_str(), jsonString.c_str());
+  
+  Serial.printf("MQTT Published all sensors to %s\n", topic.c_str());
+}
+
+// Publish Relay Status to MQTT
+void publishRelayStatus() {
+  if (!mqttConnected || !mqttClient.connected()) {
+    return;
+  }
+  
+  JsonDocument doc;
+  doc["relay1"] = relayFan.getState();
+  doc["relay2"] = relayPump.getState();
+  doc["relay3"] = relayHeater.getState();
+  
+  String jsonString;
+  serializeJson(doc, jsonString);
+  
+  String topic = mqtt_topic_prefix + "/relays/status";
+  mqttClient.publish(topic.c_str(), jsonString.c_str());
+  
+  Serial.printf("MQTT Published relay status to %s\n", topic.c_str());
+}
+
+// Get MQTT Topics as JSON
+String getMQTTTopicsJSON() {
+  JsonDocument doc;
+  
+  doc["enabled"] = mqtt_enabled;
+  doc["connected"] = mqttConnected;
+  doc["server"] = mqtt_server;
+  doc["port"] = mqtt_port;
+  doc["prefix"] = mqtt_topic_prefix;
+  doc["clientId"] = mqtt_client_id;
+  
+  // List all topics
+  JsonObject topics = doc["topics"].to<JsonObject>();
+  topics["ds18b20"] = mqtt_topic_prefix + "/ds18b20";
+  topics["xymd03"] = mqtt_topic_prefix + "/xymd03";
+  topics["sensors"] = mqtt_topic_prefix + "/sensors";
+  topics["relay_status"] = mqtt_topic_prefix + "/relays/status";
+  topics["relay1_set"] = mqtt_topic_prefix + "/relay/1/set";
+  topics["relay2_set"] = mqtt_topic_prefix + "/relay/2/set";
+  topics["relay3_set"] = mqtt_topic_prefix + "/relay/3/set";
+  
+  String jsonString;
+  serializeJson(doc, jsonString);
+  return jsonString;
+}
+
 // Save config to SPIFFS
 void saveConfigToSPIFFS() {
   File file = SPIFFS.open("/config.json", "w");
@@ -1023,6 +1298,14 @@ void saveConfigToSPIFFS() {
   doc["autoHumEnabled"] = autoHumEnabled;
   doc["scheduleEnabled"] = scheduleEnabled;
   doc["cityName"] = cityName;
+  
+  // Save MQTT settings
+  doc["mqttEnabled"] = mqtt_enabled;
+  doc["mqttServer"] = mqtt_server;
+  doc["mqttPort"] = mqtt_port;
+  doc["mqttUsername"] = mqtt_username;
+  doc["mqttPassword"] = mqtt_password;
+  doc["mqttTopicPrefix"] = mqtt_topic_prefix;
   
   // Save schedules
   JsonArray schedArray = doc["schedules"].to<JsonArray>();
@@ -1068,6 +1351,14 @@ void loadConfigFromSPIFFS() {
   autoHumEnabled = doc["autoHumEnabled"] | autoHumEnabled;
   scheduleEnabled = doc["scheduleEnabled"] | scheduleEnabled;
   cityName = doc["cityName"] | cityName;
+  
+  // Load MQTT settings
+  mqtt_enabled = doc["mqttEnabled"] | mqtt_enabled;
+  mqtt_server = doc["mqttServer"] | mqtt_server;
+  mqtt_port = doc["mqttPort"] | mqtt_port;
+  mqtt_username = doc["mqttUsername"] | mqtt_username;
+  mqtt_password = doc["mqttPassword"] | mqtt_password;
+  mqtt_topic_prefix = doc["mqttTopicPrefix"] | mqtt_topic_prefix;
   
   // Load schedules
   JsonArray schedArray = doc["schedules"];
@@ -1371,6 +1662,86 @@ void setupWebServer() {
     request->send(200, "application/json", output);
   });
   
+  // ===== MQTT API Endpoints =====
+  
+  // API: Get MQTT configuration
+  server.on("/api/mqtt/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+    Serial.println("API: /api/mqtt/config GET called");
+    JsonDocument doc;
+    doc["enabled"] = mqtt_enabled;
+    doc["server"] = mqtt_server;
+    doc["port"] = mqtt_port;
+    doc["username"] = mqtt_username;
+    doc["password"] = mqtt_password;
+    doc["topicPrefix"] = mqtt_topic_prefix;
+    doc["connected"] = mqttConnected;
+    
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+  });
+  
+  // API: Update MQTT configuration
+  server.on("/api/mqtt/config", HTTP_POST, 
+    [](AsyncWebServerRequest *request){}, 
+    NULL, 
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+      Serial.println("API: /api/mqtt/config POST called");
+      
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, (char*)data);
+      
+      if (error) {
+        request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON\"}");
+        return;
+      }
+      
+      // Update MQTT settings
+      if (!doc["enabled"].isNull()) mqtt_enabled = doc["enabled"].as<bool>();
+      if (!doc["server"].isNull()) mqtt_server = doc["server"].as<String>();
+      if (!doc["port"].isNull()) mqtt_port = doc["port"].as<int>();
+      if (!doc["username"].isNull()) mqtt_username = doc["username"].as<String>();
+      if (!doc["password"].isNull()) mqtt_password = doc["password"].as<String>();
+      if (!doc["topicPrefix"].isNull()) mqtt_topic_prefix = doc["topicPrefix"].as<String>();
+      
+      // Save to SPIFFS
+      saveConfigToSPIFFS();
+      
+      // Reinitialize MQTT with new settings
+      if (mqtt_enabled && wifiConnected) {
+        mqttClient.disconnect();
+        setupMQTT();
+        reconnectMQTT();
+      } else if (!mqtt_enabled) {
+        mqttClient.disconnect();
+        mqttConnected = false;
+      }
+      
+      request->send(200, "application/json", "{\"success\":true}");
+      Serial.println("MQTT config updated and saved");
+  });
+  
+  // API: Get MQTT Topics
+  server.on("/api/mqtt/topics", HTTP_GET, [](AsyncWebServerRequest *request) {
+    Serial.println("API: /api/mqtt/topics GET called");
+    String json = getMQTTTopicsJSON();
+    request->send(200, "application/json", json);
+  });
+  
+  // API: Get MQTT Status
+  server.on("/api/mqtt/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["enabled"] = mqtt_enabled;
+    doc["connected"] = mqttConnected;
+    doc["server"] = mqtt_server;
+    doc["port"] = mqtt_port;
+    doc["topicPrefix"] = mqtt_topic_prefix;
+    
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+  });
+  
   // 404 handler
   server.onNotFound([](AsyncWebServerRequest *request) {
     request->send(404, "text/plain", "Not Found");
@@ -1481,6 +1852,12 @@ void setup() {
     loadConfigFromSPIFFS();
     Serial.println("Automation system initialized");
     
+    // Setup MQTT
+    setupMQTT();
+    if (mqtt_enabled) {
+      reconnectMQTT();
+    }
+    
     fetchWeatherData();
   }
 }
@@ -1559,6 +1936,25 @@ void loop() {
   if (millis() - lastDisplayUpdate >= DISPLAY_INTERVAL) {
     lastDisplayUpdate = millis();
     updateDisplay();
+  }
+  
+  // ===== MQTT HANDLING =====
+  // Reconnect to MQTT if needed
+  if (mqtt_enabled && wifiConnected) {
+    if (!mqttClient.connected()) {
+      reconnectMQTT();
+    }
+    
+    // Process MQTT messages
+    if (mqttClient.connected()) {
+      mqttClient.loop();
+      
+      // Publish sensor data periodically
+      if (millis() - lastMqttPublish >= MQTT_PUBLISH_INTERVAL) {
+        lastMqttPublish = millis();
+        publishSensorData();
+      }
+    }
   }
 }
 

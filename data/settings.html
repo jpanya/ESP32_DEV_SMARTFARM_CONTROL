@@ -506,6 +506,90 @@
             </div>
         </div>
         
+        <!-- MQTT Settings -->
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">📡</span>
+                <span>MQTT Settings (HiveMQ)</span>
+            </div>
+            
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="mqttEnabled">
+                    <span class="slider"></span>
+                </label>
+                <label for="mqttEnabled" style="margin: 0; color: #333;">เปิดใช้งาน MQTT</label>
+            </div>
+            
+            <div class="form-group">
+                <label>🌐 MQTT Server</label>
+                <input type="text" id="mqttServer" placeholder="broker.hivemq.com">
+                <small style="color: #666;">MQTT Broker Address (Default: broker.hivemq.com)</small>
+            </div>
+            
+            <div class="form-group">
+                <label>🔌 MQTT Port</label>
+                <input type="number" id="mqttPort" placeholder="1883" min="1" max="65535">
+                <small style="color: #666;">MQTT Port (Default: 1883)</small>
+            </div>
+            
+            <div class="form-group">
+                <label>🔑 Topic Prefix</label>
+                <input type="text" id="mqttTopicPrefix" placeholder="smartfarm/device01" oninput="updateTopicPreview()">
+                <small style="color: #666;">Unique topic prefix สำหรับแต่ละอุปกรณ์ (ป้องกัน Topic ซ้ำ)</small>
+            </div>
+            
+            <div style="margin-top: 15px; padding: 12px; background: #e8f5e9; border-left: 4px solid #4caf50; border-radius: 8px;">
+                <strong style="color: #2e7d32;">📋 ตัวอย่าง Topics ของบอร์ดนี้:</strong>
+                <div id="topicPreview" style="margin-top: 10px; font-family: monospace; font-size: 0.8em; color: #1b5e20;">
+                    <div style="margin: 5px 0; padding: 5px; background: white; border-radius: 4px;">📤 <strong>DS18B20:</strong> <span id="previewDS18B20">smartfarm/device01/ds18b20</span></div>
+                    <div style="margin: 5px 0; padding: 5px; background: white; border-radius: 4px;">📤 <strong>XY-MD03:</strong> <span id="previewXYMD03">smartfarm/device01/xymd03</span></div>
+                    <div style="margin: 5px 0; padding: 5px; background: white; border-radius: 4px;">📤 <strong>All Sensors:</strong> <span id="previewSensors">smartfarm/device01/sensors</span></div>
+                    <div style="margin: 5px 0; padding: 5px; background: white; border-radius: 4px;">📤 <strong>Relay Status:</strong> <span id="previewRelayStatus">smartfarm/device01/relays/status</span></div>
+                    <div style="margin: 5px 0; padding: 5px; background: white; border-radius: 4px;">📥 <strong>Control Fan:</strong> <span id="previewRelay1">smartfarm/device01/relay/1/set</span></div>
+                    <div style="margin: 5px 0; padding: 5px; background: white; border-radius: 4px;">📥 <strong>Control Pump:</strong> <span id="previewRelay2">smartfarm/device01/relay/2/set</span></div>
+                    <div style="margin: 5px 0; padding: 5px; background: white; border-radius: 4px;">📥 <strong>Control Heater:</strong> <span id="previewRelay3">smartfarm/device01/relay/3/set</span></div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>👤 Username (Optional)</label>
+                <input type="text" id="mqttUsername" placeholder="Username for secured HiveMQ Cloud">
+                <small style="color: #666;">สำหรับ HiveMQ Cloud ที่มีการตั้ง Authentication</small>
+            </div>
+            
+            <div class="form-group">
+                <label>🔒 Password (Optional)</label>
+                <input type="password" id="mqttPassword" placeholder="Password">
+                <small style="color: #666;">สำหรับ HiveMQ Cloud ที่มีการตั้ง Authentication</small>
+            </div>
+            
+            <div id="mqttStatus" style="margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 8px; display: none;">
+                <strong>MQTT Status:</strong>
+                <div style="margin-top: 5px;">
+                    <span id="mqttConnectionStatus" style="font-weight: bold;"></span>
+                </div>
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e0e0e0;">
+                    <strong style="color: #1976d2;">🔑 Client ID:</strong> <span id="mqttClientId" style="font-family: monospace; color: #666;">-</span>
+                </div>
+            </div>
+            
+            <div id="mqttTopics" style="margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 8px; display: none;">
+                <strong>📋 MQTT Topics:</strong>
+                <div style="margin-top: 10px; font-family: monospace; font-size: 0.85em;">
+                    <div style="margin: 5px 0; color: #1976d2;"><strong>🌡️ DS18B20:</strong> <span id="topicDS18B20"></span></div>
+                    <div style="margin: 5px 0; color: #1976d2;"><strong>💧 XY-MD03:</strong> <span id="topicXYMD03"></span></div>
+                    <div style="margin: 5px 0;"><strong>All Sensors:</strong> <span id="topicSensors"></span></div>
+                    <div style="margin: 5px 0;"><strong>Relay Status:</strong> <span id="topicRelayStatus"></span></div>
+                    <div style="margin: 5px 0;"><strong>Control Fan:</strong> <span id="topicRelay1"></span></div>
+                    <div style="margin: 5px 0;"><strong>Control Pump:</strong> <span id="topicRelay2"></span></div>
+                    <div style="margin: 5px 0;"><strong>Control Heater:</strong> <span id="topicRelay3"></span></div>
+                </div>
+            </div>
+            
+            <button class="nav-btn" onclick="refreshMqttStatus()" style="margin-top: 10px; width: 100%;">🔄 Refresh MQTT Status</button>
+        </div>
+        
         <!-- Schedule System -->
         <div class="card">
             <div class="card-title">
@@ -552,12 +636,92 @@
                     
                     // Load schedules
                     renderSchedules(data.schedules || []);
-                    
-                    showStatus('✅ โหลดการตั้งค่าสำเร็จ', 'success');
                 })
                 .catch(error => {
                     console.error('Error loading settings:', error);
                     showStatus('❌ ไม่สามารถโหลดการตั้งค่าได้', 'error');
+                });
+            
+            // Load MQTT settings
+            loadMqttSettings();
+        }
+        
+        // Load MQTT settings from API
+        function loadMqttSettings() {
+            fetch('/api/mqtt/config')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('MQTT settings loaded:', data);
+                    document.getElementById('mqttEnabled').checked = data.enabled || false;
+                    document.getElementById('mqttServer').value = data.server || 'broker.hivemq.com';
+                    document.getElementById('mqttPort').value = data.port || 1883;
+                    document.getElementById('mqttTopicPrefix').value = data.topicPrefix || 'smartfarm/device01';
+                    document.getElementById('mqttUsername').value = data.username || '';
+                    document.getElementById('mqttPassword').value = data.password || '';
+                    
+                    // Show MQTT status and update topic preview
+                    refreshMqttStatus();
+                    updateTopicPreview();
+                })
+                .catch(error => {
+                    console.error('Error loading MQTT settings:', error);
+                });
+        }
+        
+        // Update MQTT Topic Preview
+        function updateTopicPreview() {
+            const prefix = document.getElementById('mqttTopicPrefix').value.trim() || 'smartfarm/device01';
+            document.getElementById('previewDS18B20').textContent = prefix + '/ds18b20';
+            document.getElementById('previewXYMD03').textContent = prefix + '/xymd03';
+            document.getElementById('previewSensors').textContent = prefix + '/sensors';
+            document.getElementById('previewRelayStatus').textContent = prefix + '/relays/status';
+            document.getElementById('previewRelay1').textContent = prefix + '/relay/1/set';
+            document.getElementById('previewRelay2').textContent = prefix + '/relay/2/set';
+            document.getElementById('previewRelay3').textContent = prefix + '/relay/3/set';
+        }
+        
+        // Refresh MQTT Status and Topics
+        function refreshMqttStatus() {
+            fetch('/api/mqtt/topics')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('MQTT topics:', data);
+                    
+                    // Show status
+                    const statusDiv = document.getElementById('mqttStatus');
+                    const statusSpan = document.getElementById('mqttConnectionStatus');
+                    const clientIdSpan = document.getElementById('mqttClientId');
+                    statusDiv.style.display = 'block';
+                    
+                    // Display Client ID
+                    clientIdSpan.textContent = data.clientId || 'Not initialized';
+                    
+                    if (data.enabled && data.connected) {
+                        statusSpan.textContent = '✅ Connected to ' + data.server + ':' + data.port;
+                        statusSpan.style.color = '#4caf50';
+                    } else if (data.enabled && !data.connected) {
+                        statusSpan.textContent = '⚠️ Disconnected (will retry automatically)';
+                        statusSpan.style.color = '#ff9800';
+                    } else {
+                        statusSpan.textContent = '⭕ Disabled';
+                        statusSpan.style.color = '#999';
+                    }
+                    
+                    // Show topics
+                    if (data.enabled) {
+                        const topicsDiv = document.getElementById('mqttTopics');
+                        topicsDiv.style.display = 'block';
+                        document.getElementById('topicDS18B20').textContent = data.topics.ds18b20;
+                        document.getElementById('topicXYMD03').textContent = data.topics.xymd03;
+                        document.getElementById('topicSensors').textContent = data.topics.sensors;
+                        document.getElementById('topicRelayStatus').textContent = data.topics.relay_status;
+                        document.getElementById('topicRelay1').textContent = data.topics.relay1_set + ' (send: ON/OFF)';
+                        document.getElementById('topicRelay2').textContent = data.topics.relay2_set + ' (send: ON/OFF)';
+                        document.getElementById('topicRelay3').textContent = data.topics.relay3_set + ' (send: ON/OFF)';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading MQTT status:', error);
                 });
         }
         
@@ -790,6 +954,9 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
+                    // Save MQTT settings
+                    saveMqttSettings();
+                    
                     showStatus('✅ บันทึกการตั้งค่าสำเร็จ!', 'success');
                     console.log('Settings saved successfully');
                 } else {
@@ -812,6 +979,39 @@
             setTimeout(() => {
                 statusEl.style.display = 'none';
             }, 5000);
+        }
+        
+        // Save MQTT settings to API
+        function saveMqttSettings() {
+            const mqttData = {
+                enabled: document.getElementById('mqttEnabled').checked,
+                server: document.getElementById('mqttServer').value.trim() || 'broker.hivemq.com',
+                port: parseInt(document.getElementById('mqttPort').value) || 1883,
+                username: document.getElementById('mqttUsername').value.trim(),
+                password: document.getElementById('mqttPassword').value.trim(),
+                topicPrefix: document.getElementById('mqttTopicPrefix').value.trim() || 'smartfarm/device01'
+            };
+            
+            console.log('Saving MQTT settings:', mqttData);
+            
+            fetch('/api/mqtt/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(mqttData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('MQTT settings saved successfully');
+                    // Refresh MQTT status after saving
+                    setTimeout(() => refreshMqttStatus(), 2000);
+                } else {
+                    console.error('Failed to save MQTT settings');
+                }
+            })
+            .catch(error => {
+                console.error('Error saving MQTT settings:', error);
+            });
         }
         
         // Load settings on page load
