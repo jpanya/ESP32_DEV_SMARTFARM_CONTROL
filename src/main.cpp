@@ -188,9 +188,9 @@ DevSwitch sw2(PIN_SW2, false);
 DevSwitch sw3(PIN_SW3, false);
 
 // Relay pin definitions (from HardwareESP32Config.md)
-const uint8_t PIN_RELAY1 = 4;  // Relay1 = Fan (Active Low)
+const uint8_t PIN_RELAY1 = 17;  // Relay1 = Fan (Active Low)
 const uint8_t PIN_RELAY2 = 16; // Relay2 = Pump (Active Low)
-const uint8_t PIN_RELAY3 = 17; // Relay3 = Heater (Active Low)
+const uint8_t PIN_RELAY3 = 4; // Relay3 = Heater (Active Low)
 
 // Instantiate relays (Active Low)
 DevRelayWithTimer relayFan(PIN_RELAY1, true);
